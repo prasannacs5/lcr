@@ -1,0 +1,5 @@
+fastapi
+databricks-sdk
+reportlab
+requests
+uvicorn
