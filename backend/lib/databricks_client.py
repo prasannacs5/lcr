@@ -8,42 +8,35 @@ from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
-# Default SQL warehouse: host e2-demo-field-eng.cloud.databricks.com, path /sql/1.0/warehouses/4b9b953939869799
-DEFAULT_WAREHOUSE_ID = "4b9b953939869799"
-
 
 def get_warehouse_id() -> str:
-    """Return the SQL warehouse ID (from env or default)."""
-    return os.environ.get("DATABRICKS_WAREHOUSE_ID", DEFAULT_WAREHOUSE_ID)
-
-
-def _require_env(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
-        raise HTTPException(status_code=500, detail=f"Missing env var: {name}")
-    return value
+    """Return the SQL warehouse ID from DATABRICKS_WAREHOUSE_ID env var."""
+    wid = os.environ.get("DATABRICKS_WAREHOUSE_ID")
+    if not wid:
+        raise HTTPException(
+            status_code=500,
+            detail="Missing required env var: DATABRICKS_WAREHOUSE_ID",
+        )
+    return wid
 
 
 def get_workspace_client() -> WorkspaceClient:
-    host = _require_env("DATABRICKS_HOST")
-    token = os.environ.get("DATABRICKS_TOKEN")
+    """Create a WorkspaceClient using automatic auth detection.
 
-    if token:
-        os.environ.pop("DATABRICKS_CLIENT_ID", None)
-        os.environ.pop("DATABRICKS_CLIENT_SECRET", None)
-        logger.info("Using PAT auth via DATABRICKS_TOKEN for WorkspaceClient.")
-        return WorkspaceClient(host=host, token=token)
+    On Databricks Apps the platform injects DATABRICKS_HOST, CLIENT_ID,
+    and CLIENT_SECRET for the app's service principal automatically.
+    WorkspaceClient() picks these up via unified auth.
+    For local dev, set DATABRICKS_HOST + DATABRICKS_TOKEN.
+    """
+    return WorkspaceClient()
 
-    client_id = _require_env("DATABRICKS_CLIENT_ID")
-    client_secret = _require_env("DATABRICKS_CLIENT_SECRET")
 
-    logger.info("Using OAuth M2M via service principal for WorkspaceClient.")
-    return WorkspaceClient(
-        host=host,
-        client_id=client_id,
-        client_secret=client_secret,
-        auth_type="oauth-m2m",
-    )
+def get_host() -> str:
+    """Return the workspace host URL from WorkspaceClient or env."""
+    host = os.environ.get("DATABRICKS_HOST")
+    if host:
+        return host.rstrip("/")
+    return get_workspace_client().config.host.rstrip("/")
 
 
 def execute_sql(

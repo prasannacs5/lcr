@@ -1,4 +1,4 @@
-"""Summarize executive summary text using Databricks Foundation Model (Gemini) with WorkspaceClient auth."""
+"""Summarize executive summary text using a Databricks Foundation Model with WorkspaceClient auth."""
 
 import json
 import logging
@@ -12,8 +12,9 @@ from backend.lib.databricks_client import get_workspace_client
 
 logger = logging.getLogger(__name__)
 
-# Endpoint name (from path /serving-endpoints/<name>/invocations). Override with env.
-DEFAULT_GEMINI_ENDPOINT_NAME = "databricks-gemini-3-1-pro"
+# Foundation model endpoint for summarization. Override with DATABRICKS_SUMMARY_MODEL env var.
+# Must be a chat-capable model available on the target workspace.
+DEFAULT_SUMMARY_MODEL = "databricks-gemini-2-5-pro"
 
 EXECUTIVE_SUMMARY_SYSTEM = """You are a financial analyst. Given raw executive summary text from a Liquidity Coverage Ratio (LCR) report, produce a concise formatted summary that clearly highlights:
 
@@ -37,12 +38,12 @@ Apply these markers to the most relevant short phrases or numbers within your te
 
 
 def _get_endpoint_name() -> str:
-    return os.environ.get("DATABRICKS_GEMINI_SUMMARY_ENDPOINT_NAME", DEFAULT_GEMINI_ENDPOINT_NAME)
+    return os.environ.get("DATABRICKS_SUMMARY_MODEL", DEFAULT_SUMMARY_MODEL)
 
 
 def summarize_executive_summary(raw_text: str) -> str:
     """
-    Call Databricks Foundation Model (databricks-gemini-3-1-pro) to summarize and format
+    Call Databricks Foundation Model to summarize and format
     executive summary text into Top 3 items, Risks, and Forecasts.
     Uses WorkspaceClient authentication (same as the rest of the app).
     """

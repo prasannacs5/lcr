@@ -30,19 +30,29 @@ set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
 set_trace_processors([])
 
-LLM_ENDPOINT_NAME = "databricks-claude-3-7-sonnet"
+# ---------------------------------------------------------------------------
+# All environment-specific config is read from env vars.
+# Set these on the model serving endpoint's environment_vars:
+#   LCR_LLM_ENDPOINT_NAME  - chat model (default: databricks-claude-3-7-sonnet)
+#   LCR_GENIE_ROOM_ID      - Genie AI/BI room ID (required)
+#   DATABRICKS_HOST         - workspace URL (injected by platform or set manually)
+#   DATABRICKS_CLIENT_ID    - SP client ID for MCP auth (optional; uses unified auth if unset)
+#   DATABRICKS_CLIENT_SECRET- SP client secret for MCP auth (optional)
+# ---------------------------------------------------------------------------
+LLM_ENDPOINT_NAME = os.getenv("LCR_LLM_ENDPOINT_NAME", "databricks-claude-3-7-sonnet")
+GENIE_ROOM_ID = os.getenv("LCR_GENIE_ROOM_ID", "")
 SYSTEM_PROMPT = "You are a helpful financial assistant specialized in Liquidity Coverage Ratio (LCR) analysis and regulatory compliance. You can analyze liquidity positions, calculate LCR metrics, and provide insights on regulatory requirements."
 
-# Auth Setup - Module level initialization with proper fallback
-try:
-    workspace_client = WorkspaceClient()
-    host = workspace_client.config.host
-except Exception:
-    # In serving environment, WorkspaceClient() may fail
-    # We'll initialize it later with explicit credentials
-    workspace_client = None
-    host = os.getenv("DATABRICKS_HOST", "https://e2-demo-field-eng.cloud.databricks.com")
+if not GENIE_ROOM_ID:
+    raise RuntimeError("LCR_GENIE_ROOM_ID env var is required. Set it to the Genie AI/BI room ID.")
 
+# Auth Setup - uses automatic credential detection
+# In serving: picks up DATABRICKS_HOST + DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET env vars
+# In notebook: picks up notebook context credentials
+workspace_client = WorkspaceClient()
+host = workspace_client.config.host
+
+# For MCP server auth, use OAuth M2M if env vars are set, otherwise reuse workspace client
 if os.getenv("DATABRICKS_CLIENT_ID") and os.getenv("DATABRICKS_CLIENT_SECRET"):
     oauth_workspace_client = WorkspaceClient(
         host=host,
@@ -51,13 +61,7 @@ if os.getenv("DATABRICKS_CLIENT_ID") and os.getenv("DATABRICKS_CLIENT_SECRET"):
         auth_type="oauth-m2m",
     )
 else:
-    # Fallback for dev/testing
-    oauth_workspace_client = WorkspaceClient(
-        host=host,
-        client_id='7b50dc4d-f302-4afb-8539-59085ae60f74',
-        client_secret='<YOUR_CLIENT_SECRET>',
-        auth_type="oauth-m2m",
-    )
+    oauth_workspace_client = workspace_client
 
 class MCPToolCallingAgent(ResponsesAgent):
     
@@ -265,7 +269,7 @@ class MCPToolCallingAgent(ResponsesAgent):
         async with (
             McpServer(
                 name="liquidity_coverage_ratio",
-                params=MCPServerStreamableHttpParams(url=f"{host}/api/2.0/mcp/genie/01f10d4664e216f2936c2d8b8c2e1bdb"),
+                params=MCPServerStreamableHttpParams(url=f"{host}/api/2.0/mcp/genie/{GENIE_ROOM_ID}"),
                 workspace_client=oauth_workspace_client,
             ) as lcr_genie,
         ):

@@ -6,8 +6,8 @@ from typing import Any
 
 from backend.lib.databricks_client import execute_sql
 
-CATALOG = "cfo"
-SCHEMA = "aura_bank"
+CATALOG = os.environ.get("LCR_CATALOG", "cfo")
+SCHEMA = os.environ.get("LCR_SCHEMA", "aura_bank")
 LCR_RESULTS_TABLE = "lcr_results"
 HQLA_BREAKDOWN_TABLE = "hqla_breakdown"
 CASH_OUTFLOWS_BREAKDOWN_TABLE = "cash_outflows_breakdown"

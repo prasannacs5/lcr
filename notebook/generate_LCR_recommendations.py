@@ -1,6 +1,7 @@
 # Databricks notebook source
 # DBTITLE 1,Setup and create table
 from datetime import datetime
+import os
 import requests
 import json
 
@@ -81,8 +82,9 @@ def call_gemini_model(prompt, analysis_type):
     if not token:
         token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
     
-    # Foundation Model API endpoint - Gemini 3 Pro
-    endpoint_url = f"{w.config.host}/serving-endpoints/databricks-gemini-3-pro/invocations"
+    # Foundation Model API endpoint — configurable via DATABRICKS_SUMMARY_MODEL env var
+    model_name = os.environ.get("DATABRICKS_SUMMARY_MODEL", "databricks-gemini-2-5-pro")
+    endpoint_url = f"{w.config.host}/serving-endpoints/{model_name}/invocations"
     
     headers = {
         "Authorization": f"Bearer {token}",
@@ -282,7 +284,7 @@ print("Analysis types: exec_summary, risk_assessment, forecast_analysis")
 # MAGIC ## ✅ Successfully Implemented
 # MAGIC
 # MAGIC ### Model Integration
-# MAGIC * **Foundation Model**: Gemini-3-pro (`databricks-gemini-3-pro`)
+# MAGIC * **Foundation Model**: Gemini-3-pro (`databricks-gemini-2-5-pro`)
 # MAGIC * **Data Context**: All tables from `cfo.aura_bank` schema automatically loaded
 # MAGIC * **Authentication**: WorkspaceClient with fallback to dbutils
 # MAGIC

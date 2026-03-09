@@ -7,17 +7,18 @@ command:
   - "0.0.0.0"
   - "--port"
   - "8000"
-
-
-# For chat (serving endpoint) auth on Apps, also set in the app's environment:
-# DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET (service principal OAuth).
-# Do not commit client secret; use Databricks Apps secrets / env configuration.
 env:
-  - name: "DATABRICKS_APP_APPLICATION_ID"
-    value: "e03d6113-c751-494f-ac59-26b07e7fb69e"
-  - name: "DATABRICKS_HOST"
-    value: "https://e2-demo-field-eng.cloud.databricks.com/"
-  - name: "DATABRICKS_CLIENT_ID"
-    value: "e03d6113-c751-494f-ac59-26b07e7fb69e"
-  - name: "DATABRICKS_CLIENT_SECRET"
-    value: "<YOUR_CLIENT_SECRET>"
+  # Required: SQL warehouse ID for this workspace
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "<sql-warehouse-id>"
+  # Required: Name of the model serving endpoint for the LCR agent
+  - name: LCR_CHAT_ENDPOINT_NAME
+    value: "lcr-agent-endpoint-v4"
+  # Optional: Foundation model for executive summary (must exist on workspace)
+  - name: DATABRICKS_SUMMARY_MODEL
+    value: "databricks-gemini-2-5-pro"
+  # Optional: Override catalog/schema if tables live elsewhere
+  # - name: LCR_CATALOG
+  #   value: "cfo"
+  # - name: LCR_SCHEMA
+  #   value: "aura_bank"
