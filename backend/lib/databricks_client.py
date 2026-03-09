@@ -32,11 +32,14 @@ def get_workspace_client() -> WorkspaceClient:
 
 
 def get_host() -> str:
-    """Return the workspace host URL from WorkspaceClient or env."""
+    """Return the workspace host URL (with https:// scheme) from WorkspaceClient or env."""
     host = os.environ.get("DATABRICKS_HOST")
-    if host:
-        return host.rstrip("/")
-    return get_workspace_client().config.host.rstrip("/")
+    if not host:
+        host = get_workspace_client().config.host
+    host = host.rstrip("/")
+    if not host.startswith("https://") and not host.startswith("http://"):
+        host = f"https://{host}"
+    return host
 
 
 def execute_sql(
