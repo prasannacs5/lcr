@@ -8,13 +8,16 @@ command:
   - "--port"
   - "8000"
 env:
-  # Required: SQL warehouse ID for this workspace
+  # Required: SQL warehouse ID for dashboard panels (LCR results, HQLA, etc.)
   - name: DATABRICKS_WAREHOUSE_ID
     value: "<sql-warehouse-id>"
-  # Required: Name of the model serving endpoint for the LCR agent
-  - name: LCR_CHAT_ENDPOINT_NAME
-    value: "lcr-agent-endpoint-v4"
-  # Optional: Foundation model for executive summary (must exist on workspace)
+  # Required: Genie space ID for the LCR agent chat
+  - name: LCR_GENIE_SPACE_ID
+    value: "<genie-space-id>"
+  # Required: LLM endpoint for the in-process agent
+  - name: LCR_LLM_ENDPOINT_NAME
+    value: "databricks-claude-sonnet-4"
+  # Optional: Foundation model for executive summary
   - name: DATABRICKS_SUMMARY_MODEL
     value: "databricks-gemini-2-5-pro"
   # Optional: Override catalog/schema if tables live elsewhere

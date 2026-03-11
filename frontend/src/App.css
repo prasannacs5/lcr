@@ -3,8 +3,8 @@
   font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
   --aura-navy: #0f2942;
   --aura-navy-mid: #1a365d;
-  --aura-gold: #c9a227;
-  --aura-gold-soft: rgba(201, 162, 39, 0.12);
+  --aura-gold: #2e9e6b;
+  --aura-gold-soft: rgba(46, 158, 107, 0.10);
   --aura-bg: #f0f4f8;
   --aura-surface: #ffffff;
   --aura-border: #e2e8f0;
@@ -18,8 +18,8 @@ html[data-theme="dark"] {
   color-scheme: dark;
   --aura-navy: #e2e8f0;
   --aura-navy-mid: #94a3b8;
-  --aura-gold: #eab308;
-  --aura-gold-soft: rgba(234, 179, 8, 0.2);
+  --aura-gold: #34d399;
+  --aura-gold-soft: rgba(52, 211, 153, 0.15);
   --aura-bg: #0f172a;
   --aura-surface: #1e293b;
   --aura-border: #334155;

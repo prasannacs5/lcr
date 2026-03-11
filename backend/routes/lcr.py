@@ -7,8 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from backend.services.chat_service import chat as chat_service_chat
-from backend.services.chat_service import stream_chat as chat_service_stream_chat
+from backend.services.agent import run_agent_sync, stream_agent
 from backend.services.executive_summary_service import summarize_executive_summary
 from backend.services.fr2052a_report_service import build_fr2052a_management_pdf
 from backend.services.lcr_service import (
@@ -205,7 +204,7 @@ def gl_data(
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> ChatResponse:
     """Send a message to the LCR agent model endpoint and return the reply."""
-    reply = chat_service_chat(req.message)
+    reply = run_agent_sync(req.message)
     return ChatResponse(reply=reply)
 
 
@@ -219,7 +218,7 @@ def chat_stream(req: ChatRequest):
     def generate():
         try:
             yield _sse_event({"type": "status", "message": "Sending your question to the LCR agent…"})
-            for event in chat_service_stream_chat(req.message):
+            for event in stream_agent(req.message):
                 yield _sse_event(event)
         except Exception as e:
             err_msg = getattr(e, "detail", str(e))
