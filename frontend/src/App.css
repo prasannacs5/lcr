@@ -847,27 +847,15 @@ html[data-theme="dark"] .executive-summary-markdown .summary-red {
 }
 
 .app-logo {
-  --logo-shield-fill: var(--aura-navy);
-  --logo-shield-stroke: var(--aura-navy-mid);
-  --logo-accent: var(--aura-gold);
   display: flex;
   align-items: center;
-  gap: 0.85rem;
   flex-shrink: 0;
-  color: var(--aura-navy);
-  filter: drop-shadow(0 1px 2px rgba(15, 41, 66, 0.08));
 }
 
-.app-logo-icon {
-  width: 3.25rem;
-  height: 3.25rem;
-}
-
-.app-logo-text {
-  font-size: 1.9rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: var(--aura-navy);
+.app-logo-img {
+  height: 3.5rem;
+  width: auto;
+  object-fit: contain;
 }
 
 .page-title {

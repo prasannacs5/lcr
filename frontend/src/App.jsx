@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 
 import "./App.css";
+import databankLogo from "./assets/databank-logo.png";
 
 /** Convert Gemini [[GREEN]]/[[ORANGE]]/[[RED]] markers to HTML spans for executive summary highlighting. */
 function applySummaryHighlights(text) {
@@ -840,20 +841,8 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="app-logo" aria-label="Aura Bank">
-          <svg className="app-logo-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-            {/* Shield */}
-            <path d="M24 4L8 10v10c0 10 6 18 16 22 10-4 16-12 16-22V10L24 4z" fill="var(--logo-shield-fill)" stroke="var(--logo-shield-stroke)" strokeWidth="1.5" strokeLinejoin="round"/>
-            {/* Pillar left */}
-            <rect x="14" y="16" width="4" height="14" rx="1" fill="var(--logo-accent)"/>
-            {/* Pillar right */}
-            <rect x="30" y="16" width="4" height="14" rx="1" fill="var(--logo-accent)"/>
-            {/* Pediment / roof */}
-            <path d="M12 16h24l-2-4H14l-2 4z" fill="var(--logo-accent)"/>
-            {/* Door */}
-            <rect x="21" y="22" width="6" height="8" rx="1" fill="var(--logo-shield-fill)" stroke="var(--logo-shield-stroke)" strokeWidth="1"/>
-          </svg>
-          <span className="app-logo-text">Aura Bank</span>
+        <div className="app-logo" aria-label="DataBank">
+          <img className="app-logo-img" src={databankLogo} alt="DataBank" />
         </div>
         <h1 className="page-title">Intraday Liquidity Coverage Metrics and Analysis</h1>
         <button
