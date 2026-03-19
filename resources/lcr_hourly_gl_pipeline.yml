@@ -1,0 +1,38 @@
+resources:
+  jobs:
+    lcr_hourly_gl_pipeline:
+      name: "LCR - Hourly GL Hydrate & Validation"
+      description: "Runs every hour to hydrate general ledger data and validate accounting equation balance"
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"
+        timezone_id: "America/New_York"
+        pause_status: UNPAUSED
+      tasks:
+        - task_key: gl_hydrate
+          notebook_task:
+            notebook_path: ../src/notebooks/gl_hydrate.py
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: gl_validation
+          depends_on:
+            - task_key: gl_hydrate
+          notebook_task:
+            notebook_path: ../src/notebooks/gl_validation.py
+            source: WORKSPACE
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+
+      tags:
+        project: lcr-liquidity-analysis
+        schedule: hourly
+
+      email_notifications:
+        on_failure:
+          - prasanna.selvaraj@databricks.com
+
+      max_concurrent_runs: 1

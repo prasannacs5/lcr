@@ -1,0 +1,40 @@
+bundle:
+  name: lcr-liquidity-analysis
+
+variables:
+  warehouse_id:
+    description: SQL Warehouse ID for queries
+    default: "192fe959f141d27c"
+  catalog:
+    description: Unity Catalog name for LCR tables
+    default: "banking_cfo_treasury"
+  schema:
+    description: Schema name for LCR tables
+    default: "aura_bank"
+  app_catalog:
+    description: Catalog the app reads from (may differ from notebook catalog due to permissions)
+    default: "hive_metastore"
+  genie_space_id:
+    description: Genie Space ID for the chat assistant
+    default: "01f123d006e91b97aad469ecbc444560"
+  llm_endpoint:
+    description: LLM serving endpoint for the agent
+    default: "databricks-claude-sonnet-4"
+  summary_model:
+    description: Foundation model for executive summaries
+    default: "databricks-gemini-2-5-pro"
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://fevm-fins-demo.cloud.databricks.com
+
+  prod:
+    mode: production
+    workspace:
+      host: ${var.prod_host}

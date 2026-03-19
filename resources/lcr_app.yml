@@ -1,0 +1,40 @@
+resources:
+  apps:
+    lcr_app:
+      name: "lcr-x"
+      description: "Intraday Liquidity Coverage Metrics and Analysis - Aura Bank"
+      source_code_path: ../src/app
+      config:
+        command:
+          - "uvicorn"
+          - "backend.main:app"
+          - "--host"
+          - "0.0.0.0"
+          - "--port"
+          - "8000"
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value: ${var.warehouse_id}
+          - name: LCR_GENIE_SPACE_ID
+            value: ${var.genie_space_id}
+          - name: LCR_CATALOG
+            value: ${var.app_catalog}
+          - name: LCR_SCHEMA
+            value: ${var.schema}
+          - name: LCR_LLM_ENDPOINT_NAME
+            value: ${var.llm_endpoint}
+          - name: DATABRICKS_SUMMARY_MODEL
+            value: ${var.summary_model}
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: serving-endpoint-llm
+          serving_endpoint:
+            name: ${var.llm_endpoint}
+            permission: CAN_QUERY
+        - name: serving-endpoint-summary
+          serving_endpoint:
+            name: ${var.summary_model}
+            permission: CAN_QUERY

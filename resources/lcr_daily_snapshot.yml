@@ -1,0 +1,38 @@
+resources:
+  jobs:
+    lcr_daily_snapshot:
+      name: "LCR - Daily Snapshot & Recommendations"
+      description: "Runs daily at 6 AM ET to capture LCR snapshot, calculate ratios, and generate AI executive summaries"
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: "America/New_York"
+        pause_status: UNPAUSED
+      tasks:
+        - task_key: lcr_calculation
+          notebook_task:
+            notebook_path: ../src/notebooks/LCR_Calculation.py
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: generate_recommendations
+          depends_on:
+            - task_key: lcr_calculation
+          notebook_task:
+            notebook_path: ../src/notebooks/generate_LCR_recommendations.py
+            source: WORKSPACE
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+
+      tags:
+        project: lcr-liquidity-analysis
+        schedule: daily
+
+      email_notifications:
+        on_failure:
+          - prasanna.selvaraj@databricks.com
+
+      max_concurrent_runs: 1

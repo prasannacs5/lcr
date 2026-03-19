@@ -1,0 +1,35 @@
+name: lcr-x
+runtime: python
+command:
+  - "uvicorn"
+  - "backend.main:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "192fe959f141d27c"
+  - name: LCR_GENIE_SPACE_ID
+    value: "01f123d006e91b97aad469ecbc444560"
+  - name: LCR_CATALOG
+    value: "hive_metastore"
+  - name: LCR_SCHEMA
+    value: "aura_bank"
+  - name: LCR_LLM_ENDPOINT_NAME
+    value: "databricks-claude-sonnet-4"
+  - name: DATABRICKS_SUMMARY_MODEL
+    value: "databricks-gemini-2-5-pro"
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      id: "192fe959f141d27c"
+      permission: CAN_USE
+  - name: serving-endpoint-claude
+    serving_endpoint:
+      name: "databricks-claude-sonnet-4"
+      permission: CAN_QUERY
+  - name: serving-endpoint-gemini
+    serving_endpoint:
+      name: "databricks-gemini-2-5-pro"
+      permission: CAN_QUERY
