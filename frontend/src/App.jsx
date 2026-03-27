@@ -484,9 +484,9 @@ export default function App() {
   const [pdfReportUrl, setPdfReportUrl] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
-      return (typeof window !== "undefined" && window.localStorage.getItem("lcr-theme")) || "dark";
+      return (typeof window !== "undefined" && window.localStorage.getItem("lcr-theme")) || "light";
     } catch {
-      return "dark";
+      return "light";
     }
   });
 

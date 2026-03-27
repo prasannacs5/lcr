@@ -1,16 +1,21 @@
+/* Light mode – Treasury Data Hub style (https://github.com/Venus-Izadi/Treasury-Data-Hub-Databricks) */
 :root {
   color-scheme: light;
-  font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
-  --aura-navy: #0f2942;
-  --aura-navy-mid: #1a365d;
-  --aura-gold: #c9a227;
-  --aura-gold-soft: rgba(201, 162, 39, 0.12);
-  --aura-bg: #f0f4f8;
-  --aura-surface: #ffffff;
-  --aura-border: #e2e8f0;
-  --aura-text: #1e293b;
-  --aura-muted: #64748b;
-  --lcr-chart-line: #2563eb;
+  font-family: "Inter", "Plus Jakarta Sans", system-ui, sans-serif;
+  /* Background & surface – Treasury tokens */
+  --aura-bg: #f5f6f8;           /* background: 220 20% 97% */
+  --aura-surface: #ffffff;      /* card: 0 0% 100% */
+  --aura-border: #e4e7eb;       /* border: 220 13% 91% */
+  --aura-text: #14171f;         /* foreground: 220 20% 10% */
+  --aura-muted: #64748b;        /* muted-foreground: 220 9% 46% */
+  --aura-navy: #14171f;         /* foreground / headings */
+  --aura-navy-mid: #64748b;     /* secondary text */
+  /* Primary (green) – Treasury primary: 152 55% 41% */
+  --aura-gold: #16a34a;
+  --aura-gold-soft: rgba(22, 163, 74, 0.12);
+  /* Chart & accents */
+  --lcr-chart-line: #2563eb;    /* chart-2 blue 217 91% 60% */
+  --radius: 0.75rem;            /* Treasury --radius */
 }
 
 /* Dark mode – Treasury Data Hub style */
@@ -26,6 +31,7 @@ html[data-theme="dark"] {
   --aura-text: #f1f5f9;
   --aura-muted: #94a3b8;
   --lcr-chart-line: #38bdf8;
+  --radius: 0.75rem;
 }
 
 * {
@@ -35,8 +41,7 @@ html[data-theme="dark"] {
 body {
   margin: 0;
   background: var(--aura-bg);
-  background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(15, 41, 66, 0.06), transparent),
-    linear-gradient(180deg, var(--aura-bg) 0%, #e8eef4 100%);
+  background-image: none;
   min-height: 100vh;
 }
 

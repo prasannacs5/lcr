@@ -14,10 +14,10 @@ command:
 # Do not commit client secret; use Databricks Apps secrets / env configuration.
 env:
   - name: "DATABRICKS_APP_APPLICATION_ID"
-    value: "e03d6113-c751-494f-ac59-26b07e7fb69e"
+    value: "f1feec27-013d-42a1-a0de-d84c2396d331"
   - name: "DATABRICKS_HOST"
     value: "https://e2-demo-field-eng.cloud.databricks.com/"
   - name: "DATABRICKS_CLIENT_ID"
-    value: "e03d6113-c751-494f-ac59-26b07e7fb69e"
+    value: "f1feec27-013d-42a1-a0de-d84c2396d331"
   - name: "DATABRICKS_CLIENT_SECRET"
     value: "<YOUR_CLIENT_SECRET>"
