@@ -1,21 +1,16 @@
-/* Light mode – Treasury Data Hub style (https://github.com/Venus-Izadi/Treasury-Data-Hub-Databricks) */
 :root {
   color-scheme: light;
-  font-family: "Inter", "Plus Jakarta Sans", system-ui, sans-serif;
-  /* Background & surface – Treasury tokens */
-  --aura-bg: #f5f6f8;           /* background: 220 20% 97% */
-  --aura-surface: #ffffff;      /* card: 0 0% 100% */
-  --aura-border: #e4e7eb;       /* border: 220 13% 91% */
-  --aura-text: #14171f;         /* foreground: 220 20% 10% */
-  --aura-muted: #64748b;        /* muted-foreground: 220 9% 46% */
-  --aura-navy: #14171f;         /* foreground / headings */
-  --aura-navy-mid: #64748b;     /* secondary text */
-  /* Primary (green) – Treasury primary: 152 55% 41% */
-  --aura-gold: #16a34a;
-  --aura-gold-soft: rgba(22, 163, 74, 0.12);
-  /* Chart & accents */
-  --lcr-chart-line: #2563eb;    /* chart-2 blue 217 91% 60% */
-  --radius: 0.75rem;            /* Treasury --radius */
+  font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --aura-navy: #0f2942;
+  --aura-navy-mid: #1a365d;
+  --aura-gold: #2e9e6b;
+  --aura-gold-soft: rgba(46, 158, 107, 0.10);
+  --aura-bg: #f0f4f8;
+  --aura-surface: #ffffff;
+  --aura-border: #e2e8f0;
+  --aura-text: #1e293b;
+  --aura-muted: #64748b;
+  --lcr-chart-line: #2563eb;
 }
 
 /* Dark mode – Treasury Data Hub style */
@@ -23,15 +18,14 @@ html[data-theme="dark"] {
   color-scheme: dark;
   --aura-navy: #e2e8f0;
   --aura-navy-mid: #94a3b8;
-  --aura-gold: #eab308;
-  --aura-gold-soft: rgba(234, 179, 8, 0.2);
+  --aura-gold: #34d399;
+  --aura-gold-soft: rgba(52, 211, 153, 0.15);
   --aura-bg: #0f172a;
   --aura-surface: #1e293b;
   --aura-border: #334155;
   --aura-text: #f1f5f9;
   --aura-muted: #94a3b8;
   --lcr-chart-line: #38bdf8;
-  --radius: 0.75rem;
 }
 
 * {
@@ -41,7 +35,8 @@ html[data-theme="dark"] {
 body {
   margin: 0;
   background: var(--aura-bg);
-  background-image: none;
+  background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(15, 41, 66, 0.06), transparent),
+    linear-gradient(180deg, var(--aura-bg) 0%, #e8eef4 100%);
   min-height: 100vh;
 }
 
@@ -852,27 +847,15 @@ html[data-theme="dark"] .executive-summary-markdown .summary-red {
 }
 
 .app-logo {
-  --logo-shield-fill: var(--aura-navy);
-  --logo-shield-stroke: var(--aura-navy-mid);
-  --logo-accent: var(--aura-gold);
   display: flex;
   align-items: center;
-  gap: 0.85rem;
   flex-shrink: 0;
-  color: var(--aura-navy);
-  filter: drop-shadow(0 1px 2px rgba(15, 41, 66, 0.08));
 }
 
-.app-logo-icon {
-  width: 3.25rem;
-  height: 3.25rem;
-}
-
-.app-logo-text {
-  font-size: 1.9rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: var(--aura-navy);
+.app-logo-img {
+  height: 3.5rem;
+  width: auto;
+  object-fit: contain;
 }
 
 .page-title {
@@ -883,6 +866,22 @@ html[data-theme="dark"] .executive-summary-markdown .summary-red {
   color: var(--aura-navy);
   letter-spacing: -0.02em;
   min-width: 0;
+}
+
+.cfo-hub-link {
+  font-size: 0.75rem;
+  color: var(--aura-muted);
+  text-decoration: none;
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.cfo-hub-link:hover {
+  color: var(--aura-gold);
+  background: var(--aura-gold-soft);
+  text-decoration: underline;
 }
 
 .chat-popup-trigger {

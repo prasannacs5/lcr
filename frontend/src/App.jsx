@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 
 import "./App.css";
+import databankLogo from "./assets/databank-logo.png";
 
 /** Convert Gemini [[GREEN]]/[[ORANGE]]/[[RED]] markers to HTML spans for executive summary highlighting. */
 function applySummaryHighlights(text) {
@@ -772,22 +773,21 @@ export default function App() {
               } else if (data.type === "tool_call") {
                 setStreamingToolWorking(true);
                 if (data.sql || data.tool_name) {
-                  const step = {
+                  currentSteps.push({
                     type: "call",
                     toolName: data.tool_name || "SQL Query",
                     sql: data.sql || "",
                     callId: data.call_id || "",
-                  };
-                  currentSteps.push(step);
+                    question: data.question || "",
+                  });
                   setReasoningSteps([...currentSteps]);
                 }
               } else if (data.type === "tool_result") {
-                const step = {
+                currentSteps.push({
                   type: "result",
                   callId: data.call_id || "",
                   output: data.output || "",
-                };
-                currentSteps.push(step);
+                });
                 setReasoningSteps([...currentSteps]);
               } else if (data.type === "token") {
                 setStreamingToolWorking(false);
@@ -860,22 +860,18 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="app-logo" aria-label="Aura Bank">
-          <svg className="app-logo-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-            {/* Shield */}
-            <path d="M24 4L8 10v10c0 10 6 18 16 22 10-4 16-12 16-22V10L24 4z" fill="var(--logo-shield-fill)" stroke="var(--logo-shield-stroke)" strokeWidth="1.5" strokeLinejoin="round"/>
-            {/* Pillar left */}
-            <rect x="14" y="16" width="4" height="14" rx="1" fill="var(--logo-accent)"/>
-            {/* Pillar right */}
-            <rect x="30" y="16" width="4" height="14" rx="1" fill="var(--logo-accent)"/>
-            {/* Pediment / roof */}
-            <path d="M12 16h24l-2-4H14l-2 4z" fill="var(--logo-accent)"/>
-            {/* Door */}
-            <rect x="21" y="22" width="6" height="8" rx="1" fill="var(--logo-shield-fill)" stroke="var(--logo-shield-stroke)" strokeWidth="1"/>
-          </svg>
-          <span className="app-logo-text">Aura Bank</span>
+        <div className="app-logo" aria-label="DataBank">
+          <img className="app-logo-img" src={databankLogo} alt="DataBank" />
         </div>
         <h1 className="page-title">Intraday Liquidity Coverage Metrics and Analysis</h1>
+        <a
+          className="cfo-hub-link"
+          href="https://cfo-office-hub-3036928383961086.aws.databricksapps.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          CFO Office Hub
+        </a>
         <button
           type="button"
           className="chat-popup-trigger"
@@ -1268,14 +1264,14 @@ export default function App() {
                         {msg.reasoning && msg.reasoning.length > 0 && (
                           <details className="chat-reasoning">
                             <summary className="chat-reasoning-summary">
-                              View reasoning ({msg.reasoning.filter(s => s.type === "call").length} queries)
+                              View reasoning ({msg.reasoning.filter(s => s.type === "call").length} {msg.reasoning.filter(s => s.type === "call").length === 1 ? "query" : "queries"})
                             </summary>
                             <div className="chat-reasoning-steps">
                               {msg.reasoning.map((step, j) => (
                                 <div key={j} className={`reasoning-step reasoning-step-${step.type}`}>
                                   {step.type === "call" && step.sql && (
                                     <>
-                                      <div className="reasoning-label">SQL Query{step.toolName ? ` (${step.toolName})` : ""}</div>
+                                      <div className="reasoning-label">SQL Query</div>
                                       <pre className="reasoning-sql">{step.sql}</pre>
                                     </>
                                   )}
@@ -1313,14 +1309,14 @@ export default function App() {
                     {reasoningSteps.length > 0 && (
                       <details className="chat-reasoning chat-reasoning-live" open>
                         <summary className="chat-reasoning-summary">
-                          Agent reasoning ({reasoningSteps.filter(s => s.type === "call").length} queries)
+                          Agent reasoning ({reasoningSteps.filter(s => s.type === "call").length} {reasoningSteps.filter(s => s.type === "call").length === 1 ? "query" : "queries"})
                         </summary>
                         <div className="chat-reasoning-steps">
                           {reasoningSteps.map((step, j) => (
                             <div key={j} className={`reasoning-step reasoning-step-${step.type}`}>
                               {step.type === "call" && step.sql && (
                                 <>
-                                  <div className="reasoning-label">SQL Query{step.toolName ? ` (${step.toolName})` : ""}</div>
+                                  <div className="reasoning-label">SQL Query</div>
                                   <pre className="reasoning-sql">{step.sql}</pre>
                                 </>
                               )}
