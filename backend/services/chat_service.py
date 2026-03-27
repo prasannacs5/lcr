@@ -389,6 +389,82 @@ def _is_tool_chunk(chunk: Any) -> bool:
     return False
 
 
+def _extract_tool_info(chunk: Any) -> dict:
+    """
+    Extract tool call or tool result details from a stream chunk.
+    Returns dict with 'event_type' ("call", "result", or "unknown") and details.
+    """
+    if not isinstance(chunk, dict):
+        return {"event_type": "unknown"}
+
+    # Databricks Responses API: response.output_item contains tool details
+    r = chunk.get("response") or {}
+    output_item = r.get("output_item") if isinstance(r, dict) else None
+
+    if isinstance(output_item, dict):
+        item_type = output_item.get("type", "")
+
+        # function_call — agent is invoking a tool
+        if item_type == "function_call":
+            name = output_item.get("name", "")
+            args_raw = output_item.get("arguments", "")
+            call_id = output_item.get("call_id") or output_item.get("id", "")
+            # Parse arguments JSON to extract SQL
+            sql = ""
+            args_dict = {}
+            if isinstance(args_raw, str):
+                try:
+                    args_dict = json.loads(args_raw)
+                except (json.JSONDecodeError, TypeError):
+                    args_dict = {"raw": args_raw}
+            elif isinstance(args_raw, dict):
+                args_dict = args_raw
+            # Look for SQL in common argument field names
+            sql = (args_dict.get("sql") or args_dict.get("query")
+                   or args_dict.get("statement") or args_dict.get("input", ""))
+            return {
+                "event_type": "call",
+                "name": name,
+                "arguments": args_dict,
+                "sql": sql,
+                "call_id": call_id,
+            }
+
+        # function_call_output — result from tool execution
+        if item_type == "function_call_output":
+            call_id = output_item.get("call_id") or output_item.get("id", "")
+            output = output_item.get("output", "")
+            return {
+                "event_type": "result",
+                "call_id": call_id,
+                "output": output[:2000] if isinstance(output, str) else str(output)[:2000],
+            }
+
+    # OpenAI-style tool_use / tool_result
+    chunk_type = chunk.get("type", "")
+    if chunk_type == "tool_use":
+        name = chunk.get("name", "")
+        args_raw = chunk.get("input") or chunk.get("arguments", {})
+        sql = ""
+        if isinstance(args_raw, dict):
+            sql = args_raw.get("sql") or args_raw.get("query") or args_raw.get("statement", "")
+        return {
+            "event_type": "call",
+            "name": name,
+            "arguments": args_raw if isinstance(args_raw, dict) else {},
+            "sql": sql,
+            "call_id": chunk.get("id", ""),
+        }
+    if chunk_type == "tool_result":
+        return {
+            "event_type": "result",
+            "call_id": chunk.get("tool_use_id", ""),
+            "output": str(chunk.get("content", ""))[:2000],
+        }
+
+    return {"event_type": "unknown"}
+
+
 def _collect_streamed_reply(resp: requests.Response) -> str:
     """
     Consume a streamed response (SSE or NDJSON) and return the full assistant reply.
@@ -691,7 +767,22 @@ def stream_chat(user_message: str):
             except json.JSONDecodeError:
                 continue
             if _is_tool_chunk(data):
-                yield {"type": "tool_call"}
+                tool_info = _extract_tool_info(data)
+                if tool_info["event_type"] == "call":
+                    yield {
+                        "type": "tool_call",
+                        "tool_name": tool_info.get("name", ""),
+                        "sql": tool_info.get("sql", ""),
+                        "call_id": tool_info.get("call_id", ""),
+                    }
+                elif tool_info["event_type"] == "result":
+                    yield {
+                        "type": "tool_result",
+                        "call_id": tool_info.get("call_id", ""),
+                        "output": tool_info.get("output", ""),
+                    }
+                else:
+                    yield {"type": "tool_call"}
                 continue
             content = _extract_text_from_chunk(data, preserve_spaces=True)
             if content:

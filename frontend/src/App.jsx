@@ -468,6 +468,7 @@ export default function App() {
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingStatus, setStreamingStatus] = useState("");
   const [streamingToolWorking, setStreamingToolWorking] = useState(false);
+  const [reasoningSteps, setReasoningSteps] = useState([]);
   const [recoRecords, setRecoRecords] = useState([]);
   const [recoLoading, setRecoLoading] = useState(false);
   const [recoError, setRecoError] = useState("");
@@ -740,10 +741,11 @@ export default function App() {
     setStreamingContent("");
     setStreamingStatus("");
     setStreamingToolWorking(false);
+    setReasoningSteps([]);
     let accumulatedContent = "";
     let addedToMessages = false;
+    const currentSteps = [];
     try {
-      // Use streaming API so the user sees status and reply as it arrives (SSE).
       const res = await fetch(`${API_BASE}/api/lcr/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -769,20 +771,38 @@ export default function App() {
                 setStreamingStatus(data.message || "");
               } else if (data.type === "tool_call") {
                 setStreamingToolWorking(true);
+                if (data.sql || data.tool_name) {
+                  const step = {
+                    type: "call",
+                    toolName: data.tool_name || "SQL Query",
+                    sql: data.sql || "",
+                    callId: data.call_id || "",
+                  };
+                  currentSteps.push(step);
+                  setReasoningSteps([...currentSteps]);
+                }
+              } else if (data.type === "tool_result") {
+                const step = {
+                  type: "result",
+                  callId: data.call_id || "",
+                  output: data.output || "",
+                };
+                currentSteps.push(step);
+                setReasoningSteps([...currentSteps]);
               } else if (data.type === "token") {
                 setStreamingToolWorking(false);
-                // Append exactly what the API sent — do not trim (spaces are intentional)
                 accumulatedContent += data.content ?? "";
                 setStreamingContent(accumulatedContent);
               } else if (data.type === "done") {
                 addedToMessages = true;
                 setChatMessages((prev) => [
                   ...prev,
-                  { role: "assistant", content: accumulatedContent },
+                  { role: "assistant", content: accumulatedContent, reasoning: [...currentSteps] },
                 ]);
                 setStreamingContent("");
                 setStreamingStatus("");
                 setStreamingToolWorking(false);
+                setReasoningSteps([]);
               } else if (data.type === "error") {
                 setChatError(data.message || "Something went wrong.");
                 setStreamingContent("");
@@ -796,7 +816,7 @@ export default function App() {
       if (accumulatedContent && !addedToMessages) {
         setChatMessages((prev) => [
           ...prev,
-          { role: "assistant", content: accumulatedContent },
+          { role: "assistant", content: accumulatedContent, reasoning: [...currentSteps] },
         ]);
       }
     } catch (e) {
@@ -1243,13 +1263,44 @@ export default function App() {
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`chat-message ${msg.role === "user" ? "chat-user" : "chat-assistant"}`}>
                     {msg.role === "assistant" ? (
-                      <div className="chat-message-body">{formatChatMessage(msg.content)}</div>
+                      <>
+                        <div className="chat-message-body">{formatChatMessage(msg.content)}</div>
+                        {msg.reasoning && msg.reasoning.length > 0 && (
+                          <details className="chat-reasoning">
+                            <summary className="chat-reasoning-summary">
+                              View reasoning ({msg.reasoning.filter(s => s.type === "call").length} queries)
+                            </summary>
+                            <div className="chat-reasoning-steps">
+                              {msg.reasoning.map((step, j) => (
+                                <div key={j} className={`reasoning-step reasoning-step-${step.type}`}>
+                                  {step.type === "call" && step.sql && (
+                                    <>
+                                      <div className="reasoning-label">SQL Query{step.toolName ? ` (${step.toolName})` : ""}</div>
+                                      <pre className="reasoning-sql">{step.sql}</pre>
+                                    </>
+                                  )}
+                                  {step.type === "result" && step.output && (
+                                    <>
+                                      <div className="reasoning-label">Data Retrieved</div>
+                                      <pre className="reasoning-output">{
+                                        typeof step.output === "string"
+                                          ? step.output.substring(0, 1000)
+                                          : JSON.stringify(step.output, null, 2).substring(0, 1000)
+                                      }{(typeof step.output === "string" ? step.output.length : JSON.stringify(step.output).length) > 1000 ? "\n..." : ""}</pre>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </>
                     ) : (
                       msg.content
                     )}
                   </div>
                 ))}
-                {(streamingStatus || streamingContent || streamingToolWorking) && (
+                {(streamingStatus || streamingContent || streamingToolWorking || reasoningSteps.length > 0) && (
                   <div className="chat-message chat-assistant chat-streaming">
                     {streamingStatus && (
                       <div className="chat-streaming-status">{streamingStatus}</div>
@@ -1258,6 +1309,35 @@ export default function App() {
                       <div className="chat-streaming-tool-badge" aria-live="polite">
                         System is thinking…
                       </div>
+                    )}
+                    {reasoningSteps.length > 0 && (
+                      <details className="chat-reasoning chat-reasoning-live" open>
+                        <summary className="chat-reasoning-summary">
+                          Agent reasoning ({reasoningSteps.filter(s => s.type === "call").length} queries)
+                        </summary>
+                        <div className="chat-reasoning-steps">
+                          {reasoningSteps.map((step, j) => (
+                            <div key={j} className={`reasoning-step reasoning-step-${step.type}`}>
+                              {step.type === "call" && step.sql && (
+                                <>
+                                  <div className="reasoning-label">SQL Query{step.toolName ? ` (${step.toolName})` : ""}</div>
+                                  <pre className="reasoning-sql">{step.sql}</pre>
+                                </>
+                              )}
+                              {step.type === "result" && step.output && (
+                                <>
+                                  <div className="reasoning-label">Data Retrieved</div>
+                                  <pre className="reasoning-output">{
+                                    typeof step.output === "string"
+                                      ? step.output.substring(0, 500)
+                                      : JSON.stringify(step.output, null, 2).substring(0, 500)
+                                  }</pre>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     )}
                     {streamingContent && (
                       <div className="chat-streaming-content">

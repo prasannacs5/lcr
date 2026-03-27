@@ -1577,6 +1577,77 @@ html[data-theme="dark"] .executive-summary-markdown .summary-red {
   margin-bottom: 0.5em;
 }
 
+/* Chain-of-thought reasoning panel */
+.chat-reasoning {
+  margin-top: 0.5em;
+  border: 1px solid rgba(0, 48, 87, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.chat-reasoning-summary {
+  cursor: pointer;
+  padding: 0.4em 0.7em;
+  font-size: 0.78rem;
+  color: var(--aura-navy);
+  background: rgba(0, 48, 87, 0.04);
+  user-select: none;
+  font-weight: 500;
+}
+.chat-reasoning-summary:hover {
+  background: rgba(0, 48, 87, 0.08);
+}
+.chat-reasoning-steps {
+  padding: 0.5em 0.7em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+.reasoning-step {
+  font-size: 0.78rem;
+}
+.reasoning-label {
+  font-weight: 600;
+  color: var(--aura-navy);
+  margin-bottom: 0.25em;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.reasoning-sql {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  padding: 0.5em 0.7em;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  margin: 0;
+}
+.reasoning-output {
+  background: rgba(0, 48, 87, 0.04);
+  color: var(--aura-navy);
+  padding: 0.5em 0.7em;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  margin: 0;
+  border: 1px solid rgba(0, 48, 87, 0.08);
+}
+.chat-reasoning-live {
+  animation: reasoning-pulse 1.5s ease-in-out infinite;
+}
+@keyframes reasoning-pulse {
+  0%, 100% { border-color: rgba(0, 48, 87, 0.12); }
+  50% { border-color: rgba(201, 162, 39, 0.4); }
+}
+
 .chat-streaming-content {
   word-break: break-word;
 }
