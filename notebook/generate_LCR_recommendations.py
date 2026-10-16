@@ -60,7 +60,7 @@ MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 30
 
 w = WorkspaceClient()
-MODEL_NAME = os.environ.get("DATABRICKS_RECO_MODEL", "databricks-gemini-2-5-flash")
+MODEL_NAME = os.environ.get("DATABRICKS_RECO_MODEL", "databricks-gemini-3-8-flash")
 print(f"Using model: {MODEL_NAME}")
 
 
@@ -81,7 +81,6 @@ def call_model(prompt, analysis_type):
                 name=MODEL_NAME,
                 messages=messages,
                 max_tokens=16384,
-                temperature=0.7,
             )
 
             # Log diagnostics

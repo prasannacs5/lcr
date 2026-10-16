@@ -1,36 +1,95 @@
 # Databricks notebook source
-# DBTITLE 1,Create CFO Aura Bank Tables with Synthetic Data
+# DBTITLE 1,GL Hydration - Daily Balance Evolution
+"""
+General Ledger Hydration for Aura Bank LCR Demo.
+
+Runs daily. Reads the latest GL snapshot, applies small mean-reverting
+perturbations to each account, and writes a new day's GL entries.
+Maintains the accounting equation: Assets = Liabilities + Equity.
+
+Target LCR band: 130-160% (realistic for a well-capitalised US bank).
+"""
+
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, current_timestamp, sum as spark_sum, when
-from pyspark.sql.types import StructType, StructField, StringType, LongType, DoubleType, TimestampType
+from pyspark.sql.functions import (
+    col, lit, current_timestamp, sum as spark_sum,
+    max as spark_max, when, date_format, to_timestamp
+)
+from pyspark.sql.types import (
+    StructType, StructField, StringType, DoubleType, TimestampType
+)
 from datetime import datetime, timedelta
 import random
 
-# Create catalog and schema if they don't exist
-spark.sql("CREATE CATALOG IF NOT EXISTS cfo")
-spark.sql("CREATE SCHEMA IF NOT EXISTS cfo.aura_bank")
-
 # ============================================
-# 1. CREATE HAIRCUTS TABLE
+# CONFIG
 # ============================================
-print("Setting up haircuts table...")
+CATALOG = "banking_cfo_treasury"
+SCHEMA = "aura_bank"
+GL_TABLE = f"{CATALOG}.{SCHEMA}.general_ledger"
+HAIRCUTS_TABLE = f"{CATALOG}.{SCHEMA}.haircuts"
+RUNOFF_TABLE = f"{CATALOG}.{SCHEMA}.runoff_rates"
 
-spark.sql("""
-CREATE TABLE IF NOT EXISTS cfo.aura_bank.haircuts (
-    id BIGINT,
-    asset_category STRING,
-    asset_sub_type STRING,
-    hqla_level STRING,
-    fed_haircut STRING,
-    bcbs_haircut STRING,
-    regulatory_logic STRING
+TARGET_LCR_LOW = 1.35   # 135%
+TARGET_LCR_HIGH = 1.55  # 155%
+TARGET_LCR_MID = 1.45   # 145%
+
+# Daily perturbation ranges by account_type: (min_pct, max_pct)
+# These define the *magnitude* of change; direction is randomised with
+# mean-reversion bias applied on top.
+VOLATILITY = {
+    # Assets
+    "Cash + Fed reserves":  (0.002, 0.008),
+    "US Treasuries":        (0.001, 0.005),
+    "Agency MBS (AAA)":     (0.002, 0.007),
+    "Corporate bonds":      (0.003, 0.010),
+    "Loans (Mortgages)":    (0.0005, 0.002),
+    "Loans (Business)":     (0.001, 0.005),
+    "Municipal Bonds":      (0.002, 0.006),
+    # Liabilities
+    "Retail Deposits":      (0.0005, 0.003),
+    "Corporate Deposits":   (0.003, 0.010),
+    "Wholesale Funding":    (0.005, 0.020),
+    "Short-term Debt":      (0.003, 0.015),
+    "Long-term Debt":       (0.0, 0.001),
+    # Equity — computed as residual, not perturbed
+    "Equity":               (0.0, 0.0),
+}
+
+# GL schema
+gl_schema = StructType([
+    StructField("gl_account", StringType(), True),
+    StructField("account_name", StringType(), True),
+    StructField("category", StringType(), True),
+    StructField("account_type", StringType(), True),
+    StructField("hqla_type", StringType(), True),
+    StructField("runoff", StringType(), True),
+    StructField("timestamp", TimestampType(), True),
+    StructField("net_balance_m", DoubleType(), True),
+])
+
+# COMMAND ----------
+
+# DBTITLE 1,Ensure Tables Exist
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
+
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {GL_TABLE} (
+    gl_account STRING,
+    account_name STRING,
+    category STRING,
+    account_type STRING,
+    hqla_type STRING,
+    runoff STRING,
+    timestamp TIMESTAMP,
+    net_balance_m DOUBLE
 )
 """)
 
-# Check if haircuts table is empty
-haircuts_count = spark.table("cfo.aura_bank.haircuts").count()
-
+# Ensure haircuts & runoff_rates exist (idempotent)
+haircuts_count = spark.table(HAIRCUTS_TABLE).count()
 if haircuts_count == 0:
+    from pyspark.sql.types import LongType
     haircuts_data = [
         (1, "Cash + Fed reserves", "Central Bank Reserves", "Level 1", "0%", "0%", "§ 50.20(a)(1)"),
         (2, "Cash + Fed reserves", "Coins & Banknotes", "Level 1", "0%", "0%", "§ 50.20(a)(1)"),
@@ -42,9 +101,8 @@ if haircuts_count == 0:
         (8, "Municipal Bonds", "General Obligation (GO)", "Level 2A", "15%", "N/A", "US Specific Rule"),
         (9, "S&P 500 Equity", "Common Stock", "Level 2B", "50%", "50%", "§ 50.20(c)(2)"),
         (10, "Loans (Mortgages)", "Performing < 30d maturity", "Non-HQLA", "100%", "100%", "Treated as Inflow"),
-        (11, "Loans (Business)", "Performing < 30d maturity", "Non-HQLA", "100%", "100%", "Treated as Inflow")
+        (11, "Loans (Business)", "Performing < 30d maturity", "Non-HQLA", "100%", "100%", "Treated as Inflow"),
     ]
-    
     haircuts_schema = StructType([
         StructField("id", LongType(), True),
         StructField("asset_category", StringType(), True),
@@ -52,34 +110,15 @@ if haircuts_count == 0:
         StructField("hqla_level", StringType(), True),
         StructField("fed_haircut", StringType(), True),
         StructField("bcbs_haircut", StringType(), True),
-        StructField("regulatory_logic", StringType(), True)
+        StructField("regulatory_logic", StringType(), True),
     ])
-    
-    haircuts_df = spark.createDataFrame(haircuts_data, haircuts_schema)
-    haircuts_df.write.mode("append").saveAsTable("cfo.aura_bank.haircuts")
-    print("✓ Haircuts table created with 11 entries")
-else:
-    print(f"✓ Haircuts table already exists with {haircuts_count} entries")
+    spark.createDataFrame(haircuts_data, haircuts_schema) \
+        .write.mode("append").saveAsTable(HAIRCUTS_TABLE)
+    print("✓ Seeded haircuts table")
 
-# ============================================
-# 2. CREATE RUNOFF_RATES TABLE
-# ============================================
-print("Setting up runoff_rates table...")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS cfo.aura_bank.runoff_rates (
-    id BIGINT,
-    liability_category STRING,
-    specific_component STRING,
-    fed_runoff_rate STRING,
-    regulatory_logic STRING
-)
-""")
-
-# Check if runoff_rates table is empty
-runoff_count = spark.table("cfo.aura_bank.runoff_rates").count()
-
+runoff_count = spark.table(RUNOFF_TABLE).count()
 if runoff_count == 0:
+    from pyspark.sql.types import LongType
     runoff_data = [
         (1, "Retail Deposits", "Stable (Insured + Relationship)", "3%", "Standard for 'sticky' core deposits."),
         (2, "Retail Deposits", "Less Stable (Uninsured / Digital)", "10%", "Base rate for uninsured retail."),
@@ -90,319 +129,247 @@ if runoff_count == 0:
         (7, "Wholesale Funding", "Unsecured / Commercial Paper", "100%", "Short-term market funding that freezes."),
         (8, "Short-term Debt", "Maturity ≤ 30 Days", "100%", "Any debt due within the LCR window."),
         (9, "Long-term Debt", "Maturity > 30 Days", "0%", "No cash leaves the bank within 30 days."),
-        (10, "Equity", "Shareholders' Equity", "0%", "Equity is permanent capital; it never runs off.")
+        (10, "Equity", "Shareholders' Equity", "0%", "Equity is permanent capital; it never runs off."),
     ]
-    
     runoff_schema = StructType([
         StructField("id", LongType(), True),
         StructField("liability_category", StringType(), True),
         StructField("specific_component", StringType(), True),
         StructField("fed_runoff_rate", StringType(), True),
-        StructField("regulatory_logic", StringType(), True)
+        StructField("regulatory_logic", StringType(), True),
     ])
-    
-    runoff_df = spark.createDataFrame(runoff_data, runoff_schema)
-    runoff_df.write.mode("append").saveAsTable("cfo.aura_bank.runoff_rates")
-    print("✓ Runoff rates table created with 10 entries")
-else:
-    print(f"✓ Runoff rates table already exists with {runoff_count} entries")
+    spark.createDataFrame(runoff_data, runoff_schema) \
+        .write.mode("append").saveAsTable(RUNOFF_TABLE)
+    print("✓ Seeded runoff_rates table")
 
-# ============================================
-# 3. CREATE GENERAL_LEDGER TABLE
-# ============================================
+# COMMAND ----------
 
-# Check if table exists and has data
-try:
-    existing_gl = spark.table("cfo.aura_bank.general_ledger")
-    table_exists = True
-    existing_count = existing_gl.count()
-    print(f"Found existing GL table with {existing_count} records")
-except:
-    table_exists = False
-    existing_count = 0
-    print("Creating new GL table...")
+# DBTITLE 1,Read Latest GL Snapshot
+gl_df = spark.table(GL_TABLE)
+row_count = gl_df.count()
 
-# Define GL schema
-gl_schema = StructType([
-    StructField("gl_account", StringType(), True),
-    StructField("account_name", StringType(), True),
-    StructField("category", StringType(), True),
-    StructField("account_type", StringType(), True),
-    StructField("hqla_type", StringType(), True),
-    StructField("runoff", StringType(), True),
-    StructField("timestamp", TimestampType(), True),
-    StructField("net_balance_m", DoubleType(), True)
-])
-
-if not table_exists or existing_count == 0:
-    # Create table structure
-    spark.sql("""
-    CREATE TABLE IF NOT EXISTS cfo.aura_bank.general_ledger (
-        gl_account STRING,
-        account_name STRING,
-        category STRING,
-        account_type STRING,
-        hqla_type STRING,
-        runoff STRING,
-        timestamp TIMESTAMP,
-        net_balance_m DOUBLE
-    )
-    """)
-    
-    # Initial data load - create base GL entries
-    # Assets = Liabilities + Equity
-    # Let's set: Assets = 31,791.5M, Liabilities = 28,791.5M, Equity = 3,000M
-    gl_data = [
-        # ASSETS (positive values) - Total: 31,791.5M
-        ("101001", "Cash & Vault", "Asset", "Cash + Fed reserves", "Level 1", "0%", datetime(2026, 2, 18, 17, 59, 59), 500.0),
-        ("101005", "Fed Reserve Account", "Asset", "Cash + Fed reserves", "Level 1", "0%", datetime(2026, 2, 18, 17, 59, 59), 4000.0),
-        ("102010", "US Treasury Bills", "Asset", "US Treasuries", "Level 1", "0%", datetime(2026, 2, 18, 17, 0, 5), 3500.0),
-        ("103050", "Agency MBS - FNMA", "Asset", "Agency MBS (AAA)", "Level 2A", "0%", datetime(2026, 2, 18, 17, 0, 5), 2500.0),
-        ("105001", "Corp Bonds (IG)", "Asset", "Corporate bonds", "Level 2B", "0%", datetime(2026, 2, 18, 17, 0, 5), 1000.0),
-        ("110000", "Residential Mortgages", "Asset", "Loans (Mortgages)", "Non-HQLA", "0%", datetime(2026, 2, 18, 17, 30, 10), 18000.0),
-        ("199999", "Other Assets (Investments)", "Asset", "Loans (Business)", "Non-HQLA", "0%", datetime(2026, 2, 18, 17, 59, 59), 2291.5),
-        # LIABILITIES (negative values) - Total: -28,791.5M
-        ("201001", "Retail Checking (Ins)", "Liability", "Retail Deposits", "N/A", "3%", datetime(2026, 2, 18, 23, 59, 59), -15000.0),
-        ("201002", "Retail Savings (Ins)", "Liability", "Retail Deposits", "N/A", "3%", datetime(2026, 2, 18, 23, 59, 59), -7300.0),
-        ("202001", "Retail HY (Unins)", "Liability", "Retail Deposits", "N/A", "10%", datetime(2026, 2, 18, 23, 59, 59), -3200.0),
-        ("203010", "Corp Payroll Accts", "Liability", "Corporate Deposits", "N/A", "25%", datetime(2026, 2, 18, 23, 59, 59), -2000.0),
-        ("203020", "Corp Excess Cash (Fin)", "Liability", "Corporate Deposits", "N/A", "100%", datetime(2026, 2, 18, 23, 59, 59), -800.0),
-        ("205001", "Commercial Paper", "Liability", "Wholesale Funding", "N/A", "100%", datetime(2026, 2, 18, 23, 59, 59), -250.0),
-        ("208000", "Short-term Debt", "Liability", "Short-term Debt", "N/A", "100%", datetime(2026, 2, 18, 23, 59, 59), -241.5),
-        # EQUITY (negative value) - Total: -3,000M
-        ("301000", "Common Equity", "Equity", "Equity", "N/A", "0%", datetime(2026, 2, 18, 18, 0, 0), -3000.0)
+if row_count == 0:
+    # First run ever — seed with initial data
+    print("No existing GL data. Seeding initial balance sheet...")
+    seed_ts = datetime(2026, 2, 26, 17, 0, 0)
+    seed_data = [
+        # ASSETS
+        ("101001", "Cash & Vault", "Asset", "Cash + Fed reserves", "Level 1", "0%", seed_ts, 500.0),
+        ("101005", "Fed Reserve Account", "Asset", "Cash + Fed reserves", "Level 1", "0%", seed_ts, 4000.0),
+        ("102010", "US Treasury Bills", "Asset", "US Treasuries", "Level 1", "0%", seed_ts, 3500.0),
+        ("103050", "Agency MBS - FNMA", "Asset", "Agency MBS (AAA)", "Level 2A", "0%", seed_ts, 2500.0),
+        ("105001", "Corp Bonds (IG)", "Asset", "Corporate bonds", "Level 2B", "0%", seed_ts, 1000.0),
+        ("110000", "Residential Mortgages", "Asset", "Loans (Mortgages)", "Non-HQLA", "0%", seed_ts, 18000.0),
+        ("199999", "Other Assets (Investments)", "Asset", "Loans (Business)", "Non-HQLA", "0%", seed_ts, 2291.5),
+        # LIABILITIES
+        ("201001", "Retail Checking (Ins)", "Liability", "Retail Deposits", "N/A", "3%", seed_ts, -15000.0),
+        ("201002", "Retail Savings (Ins)", "Liability", "Retail Deposits", "N/A", "3%", seed_ts, -7300.0),
+        ("202001", "Retail HY (Unins)", "Liability", "Retail Deposits", "N/A", "10%", seed_ts, -3200.0),
+        ("203010", "Corp Payroll Accts", "Liability", "Corporate Deposits", "N/A", "25%", seed_ts, -2000.0),
+        ("203020", "Corp Excess Cash (Fin)", "Liability", "Corporate Deposits", "N/A", "100%", seed_ts, -800.0),
+        ("205001", "Commercial Paper", "Liability", "Wholesale Funding", "N/A", "100%", seed_ts, -250.0),
+        ("208000", "Short-term Debt", "Liability", "Short-term Debt", "N/A", "100%", seed_ts, -241.5),
+        # EQUITY
+        ("301000", "Common Equity", "Equity", "Equity", "N/A", "0%", seed_ts, -3000.0),
     ]
-    
-    gl_df = spark.createDataFrame(gl_data, gl_schema)
-    gl_df.write.mode("append").saveAsTable("cfo.aura_bank.general_ledger")
-    print(f"✓ General Ledger table created with {len(gl_data)} initial entries")
-    
+    seed_df = spark.createDataFrame(seed_data, gl_schema)
+    seed_df.write.mode("append").saveAsTable(GL_TABLE)
+    print(f"✓ Seeded GL with {len(seed_data)} rows at {seed_ts}")
+    # Re-read
+    gl_df = spark.table(GL_TABLE)
+
+# Get latest date in GL
+latest_ts = gl_df.agg(spark_max("timestamp")).collect()[0][0]
+latest_date = latest_ts.date() if latest_ts else None
+print(f"Latest GL date: {latest_date} ({latest_ts})")
+
+# Check if today's data already exists
+today = datetime.now().date()
+if latest_date == today:
+    print(f"✓ GL data for {today} already exists. Nothing to do.")
+    dbutils.notebook.exit(f"Already hydrated for {today}")
+
+# Get the latest day's rows (the snapshot we'll evolve)
+latest_rows = gl_df.filter(
+    col("timestamp").cast("date") == lit(str(latest_date))
+).toPandas()
+
+print(f"Found {len(latest_rows)} GL rows for {latest_date}")
+print(f"Will generate data for {today}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Estimate Current LCR for Mean-Reversion Bias
+
+# Quick LCR estimate from the latest snapshot
+# Use hqla_type for haircuts (matches SQL function) and GL runoff column for outflows
+HQLA_HAIRCUTS = {
+    "Level 1": 0.0,
+    "Level 2A": 0.15,
+    "Level 2B": 0.50,
+    "Non-HQLA": 1.0,
+}
+
+# Calculate HQLA and outflows from latest rows
+hqla_total = 0.0
+outflow_total = 0.0
+for _, row in latest_rows.iterrows():
+    balance = float(row["net_balance_m"])
+    category = str(row["category"])
+
+    if category == "Asset":
+        hqla_type = str(row["hqla_type"])
+        haircut = HQLA_HAIRCUTS.get(hqla_type, 1.0)
+        hqla_total += balance * (1.0 - haircut)
+    elif category == "Liability":
+        runoff_str = str(row["runoff"]).replace("%", "")
+        try:
+            runoff_rate = float(runoff_str) / 100.0
+        except ValueError:
+            runoff_rate = 0.0
+        outflow_total += abs(balance) * runoff_rate
+
+current_lcr = hqla_total / outflow_total if outflow_total > 0 else 999.0
+print(f"Estimated current LCR: {current_lcr:.4f} ({current_lcr*100:.1f}%)")
+print(f"  HQLA: ${hqla_total:,.1f}M | Outflows: ${outflow_total:,.1f}M")
+
+# Determine mean-reversion bias
+# If LCR is below target band, bias HQLA up and outflows down
+# If LCR is above target band, bias HQLA down and outflows up
+if current_lcr < TARGET_LCR_LOW:
+    lcr_bias = 1.0   # strong push up
+    print(f"  Bias: STRONG UP (below {TARGET_LCR_LOW*100:.0f}%)")
+elif current_lcr < TARGET_LCR_MID:
+    lcr_bias = 0.3    # gentle push up
+    print(f"  Bias: gentle up (below midpoint)")
+elif current_lcr > TARGET_LCR_HIGH:
+    lcr_bias = -1.0   # strong push down
+    print(f"  Bias: STRONG DOWN (above {TARGET_LCR_HIGH*100:.0f}%)")
+elif current_lcr > TARGET_LCR_MID:
+    lcr_bias = -0.3   # gentle push down
+    print(f"  Bias: gentle down (above midpoint)")
 else:
-    # Add 10 new entries while maintaining accounting equation
-    current_time = datetime.now()
-    
-    # Define transaction templates (5 assets, 4 liabilities, 1 equity adjustment)
-    new_transactions = [
-        # Assets (positive values)
-        (f"11{random.randint(1000, 9999)}", "Commercial Loans", "Asset", "Loans (Business)", "Non-HQLA", "0%", current_time, round(random.uniform(50, 200), 2)),
-        (f"10{random.randint(1000, 9999)}", "Municipal Bonds", "Asset", "Municipal Bonds", "Level 2A", "0%", current_time, round(random.uniform(100, 300), 2)),
-        (f"10{random.randint(1000, 9999)}", "Treasury Notes", "Asset", "US Treasuries", "Level 1", "0%", current_time, round(random.uniform(200, 500), 2)),
-        (f"10{random.randint(1000, 9999)}", "Agency Securities", "Asset", "Agency MBS (AAA)", "Level 2A", "0%", current_time, round(random.uniform(150, 400), 2)),
-        (f"11{random.randint(1000, 9999)}", "Auto Loans", "Asset", "Loans (Business)", "Non-HQLA", "0%", current_time, round(random.uniform(80, 250), 2)),
-        # Liabilities (negative values)
-        (f"20{random.randint(1000, 9999)}", "Retail CDs", "Liability", "Retail Deposits", "N/A", "10%", current_time, round(-random.uniform(100, 300), 2)),
-        (f"20{random.randint(1000, 9999)}", "Corp Operating Deposits", "Liability", "Corporate Deposits", "N/A", "25%", current_time, round(-random.uniform(150, 400), 2)),
-        (f"20{random.randint(1000, 9999)}", "Money Market Deposits", "Liability", "Retail Deposits", "N/A", "3%", current_time, round(-random.uniform(200, 500), 2)),
-        (f"20{random.randint(1000, 9999)}", "Wholesale Borrowings", "Liability", "Wholesale Funding", "N/A", "100%", current_time, round(-random.uniform(50, 150), 2))
-    ]
-    
-    # Calculate total assets and liabilities from new transactions
-    new_assets = sum([t[7] for t in new_transactions if t[2] == "Asset"])
-    new_liabilities = sum([t[7] for t in new_transactions if t[2] == "Liability"])
-    
-    # Calculate equity adjustment to balance (Assets = Liabilities + Equity)
-    equity_adjustment = -(new_assets + new_liabilities)  # negative because equity is on credit side
-    
-    # Add equity adjustment transaction
-    new_transactions.append(
-        (f"30{random.randint(1000, 9999)}", "Retained Earnings Adjustment", "Equity", "Equity", "N/A", "0%", current_time, round(equity_adjustment, 2))
-    )
-    
-    # Create DataFrame for new transactions
-    new_gl_df = spark.createDataFrame(new_transactions, gl_schema)
-    
-    # Append to existing table
-    new_gl_df.write.mode("append").saveAsTable("cfo.aura_bank.general_ledger")
-    
-    print(f"✓ Added 10 new entries to General Ledger")
-    print(f"  New Assets: ${new_assets:,.2f}M")
-    print(f"  New Liabilities: ${abs(new_liabilities):,.2f}M")
-    print(f"  Equity Adjustment: ${equity_adjustment:,.2f}M")
-    print(f"  Balance Check: ${new_assets + new_liabilities + equity_adjustment:,.2f}M (should be 0.00)")
-
-# ============================================
-# VERIFY ACCOUNTING EQUATION
-# ============================================
-gl_final = spark.table("cfo.aura_bank.general_ledger")
-
-# Calculate totals by category
-totals = gl_final.groupBy("category").agg(spark_sum("net_balance_m").alias("total")).collect()
-
-print("\n" + "="*60)
-print("BALANCE SHEET VERIFICATION")
-print("="*60)
-
-assets_total = 0
-liabilities_total = 0
-equity_total = 0
-
-for row in totals:
-    if row.category == "Asset":
-        assets_total = row.total
-        print(f"Total Assets:      ${assets_total:>15,.2f}M")
-    elif row.category == "Liability":
-        liabilities_total = row.total
-        print(f"Total Liabilities: ${abs(liabilities_total):>15,.2f}M")
-    elif row.category == "Equity":
-        equity_total = row.total
-        print(f"Total Equity:      ${abs(equity_total):>15,.2f}M")
-
-balance = assets_total + liabilities_total + equity_total
-print("="*60)
-print(f"Net Balance:       ${balance:>15,.2f}M")
-print(f"Status: {'✓ BALANCED' if abs(balance) < 0.01 else '✗ UNBALANCED'}")
-print("="*60)
-
-print(f"\nTotal GL Entries: {gl_final.count()}")
+    lcr_bias = 0.0
+    print(f"  Bias: neutral (near midpoint)")
 
 # COMMAND ----------
 
-# DBTITLE 1,View Haircuts Table
-# Display haircuts table
-print("HAIRCUTS TABLE")
-print("="*80)
-display(spark.table("cfo.aura_bank.haircuts"))
+# DBTITLE 1,Generate New Day's GL Entries
 
-# COMMAND ----------
+new_ts = datetime.combine(today, datetime.min.time().replace(hour=17))
+new_rows = []
 
-# DBTITLE 1,View Runoff Rates Table
-# Display runoff_rates table
-print("RUNOFF RATES TABLE")
-print("="*80)
-display(spark.table("cfo.aura_bank.runoff_rates"))
+# Separate equity rows — we'll recompute them as residual
+equity_rows = latest_rows[latest_rows["category"] == "Equity"]
+non_equity_rows = latest_rows[latest_rows["category"] != "Equity"]
 
-# COMMAND ----------
+for _, row in non_equity_rows.iterrows():
+    acct_type = row["account_type"]
+    category = row["category"]
+    balance = row["net_balance_m"]
 
-# DBTITLE 1,View General Ledger Table
-# Display general_ledger table
-print("GENERAL LEDGER TABLE")
-print("="*80)
-gl_df = spark.table("cfo.aura_bank.general_ledger").orderBy("category", "gl_account")
-display(gl_df)
+    vol_min, vol_max = VOLATILITY.get(acct_type, (0.001, 0.005))
 
-# Show summary by category
-print("\nSUMMARY BY CATEGORY")
-print("="*80)
-summary = spark.sql("""
-    SELECT 
+    # Random magnitude
+    magnitude = random.uniform(vol_min, vol_max)
+
+    # Determine direction with mean-reversion bias
+    # For assets (positive balance): lcr_bias > 0 means we want HQLA up → assets up
+    # For liabilities (negative balance): lcr_bias > 0 means we want outflows down → liabilities down (less negative)
+    base_direction = random.choice([-1, 1])
+
+    if category == "Asset":
+        # Positive lcr_bias → favour positive direction (increase assets)
+        bias_weight = lcr_bias * 0.3  # scale down so bias doesn't dominate
+        direction = 1 if (random.random() < 0.5 + bias_weight) else -1
+    elif category == "Liability":
+        # Positive lcr_bias → favour making liabilities less negative (reducing outflows)
+        # Less negative = direction +1 on a negative balance → smaller absolute value
+        bias_weight = lcr_bias * 0.2
+        direction = 1 if (random.random() < 0.5 + bias_weight) else -1
+    else:
+        direction = base_direction
+
+    change = balance * magnitude * direction
+    new_balance = round(balance + change, 2)
+
+    new_rows.append((
+        row["gl_account"],
+        row["account_name"],
         category,
-        COUNT(*) as num_accounts,
-        SUM(net_balance_m) as total_balance_m
-    FROM cfo.aura_bank.general_ledger
-    GROUP BY category
-    ORDER BY category
-""")
-display(summary)
+        acct_type,
+        row["hqla_type"],
+        row["runoff"],
+        new_ts,
+        new_balance,
+    ))
+
+# Compute equity as residual to maintain accounting equation
+total_assets = sum(r[7] for r in new_rows if r[2] == "Asset")
+total_liabilities = sum(r[7] for r in new_rows if r[2] == "Liability")
+required_equity = -(total_assets + total_liabilities)
+
+# Distribute across equity accounts proportionally
+equity_original_total = equity_rows["net_balance_m"].sum()
+for _, row in equity_rows.iterrows():
+    if equity_original_total != 0:
+        proportion = row["net_balance_m"] / equity_original_total
+    else:
+        proportion = 1.0 / len(equity_rows)
+    new_balance = round(required_equity * proportion, 2)
+    new_rows.append((
+        row["gl_account"],
+        row["account_name"],
+        "Equity",
+        row["account_type"],
+        row["hqla_type"],
+        row["runoff"],
+        new_ts,
+        new_balance,
+    ))
+
+print(f"Generated {len(new_rows)} GL entries for {today}")
+
+# Verify accounting equation
+total_all = sum(r[7] for r in new_rows)
+print(f"  Assets:      ${sum(r[7] for r in new_rows if r[2] == 'Asset'):>12,.2f}M")
+print(f"  Liabilities: ${sum(abs(r[7]) for r in new_rows if r[2] == 'Liability'):>12,.2f}M")
+print(f"  Equity:      ${sum(abs(r[7]) for r in new_rows if r[2] == 'Equity'):>12,.2f}M")
+print(f"  Net balance: ${total_all:>12,.4f}M {'✓' if abs(total_all) < 0.1 else '✗'}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Important Note About Balance
-# MAGIC %md
-# MAGIC ## ⚠️ Current Status: Initial Data Has Balance Issue
-# MAGIC
-# MAGIC The general_ledger table currently contains data from the first run with an accounting imbalance:
-# MAGIC * **Assets**: $31,791.50M
-# MAGIC * **Liabilities**: $39,691.50M  
-# MAGIC * **Equity**: $3,000.00M
-# MAGIC * **Net Balance**: -$10,900.00M ❌
-# MAGIC
-# MAGIC ### Why This Happened
-# MAGIC The initial test data had incorrect liability values. The accounting equation requires: **Assets = Liabilities + Equity**
-# MAGIC
-# MAGIC ### What Happens Next
-# MAGIC * **Subsequent runs** of Cell 1 will add 10 NEW entries that ARE properly balanced
-# MAGIC * Each run adds: 5 assets, 4 liabilities, and 1 equity adjustment that maintains the equation
-# MAGIC * The new entries will be balanced, but the initial 15 records will remain unbalanced
-# MAGIC
-# MAGIC ### To Fix (Optional)
-# MAGIC If you want to start fresh with balanced data, you can manually run:
-# MAGIC ```sql
-# MAGIC DROP TABLE cfo.aura_bank.general_ledger;
-# MAGIC ```
-# MAGIC Then re-run Cell 1 to create the table with corrected initial values.
-# MAGIC
-# MAGIC ### Or Continue As-Is
-# MAGIC You can continue using the table - just note that the first 15 records have the imbalance, but all subsequent additions will be properly balanced.
+# DBTITLE 1,Write New GL Entries
+new_gl_df = spark.createDataFrame(new_rows, gl_schema)
+new_gl_df.write.mode("append").saveAsTable(GL_TABLE)
+print(f"✓ Wrote {len(new_rows)} GL entries for {today}")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## 🔄 Adding More Transactions
-# MAGIC
-# MAGIC To add 10 new balanced transactions to the General Ledger:
-# MAGIC
-# MAGIC 1. **Re-run Cell 1** ("Create CFO Aura Bank Tables with Synthetic Data")
-# MAGIC 2. The code will detect the existing table and add:
-# MAGIC    * 5 new asset accounts (Commercial Loans, Municipal Bonds, Treasury Notes, Agency Securities, Auto Loans)
-# MAGIC    * 4 new liability accounts (Retail CDs, Corp Operating Deposits, Money Market Deposits, Wholesale Borrowings)  
-# MAGIC    * 1 equity adjustment to balance the new entries
-# MAGIC
-# MAGIC 3. Each run adds exactly 10 entries that maintain: **Assets = Liabilities + Equity**
-# MAGIC
-# MAGIC ### Example Output
-# MAGIC When you re-run Cell 1, you'll see:
-# MAGIC ```
-# MAGIC ✓ Added 10 new entries to General Ledger
-# MAGIC   New Assets: $XXX.XXM
-# MAGIC   New Liabilities: $XXX.XXM
-# MAGIC   Equity Adjustment: $XXX.XXM
-# MAGIC   Balance Check: $0.00M (should be 0.00)
-# MAGIC ```
-# MAGIC
-# MAGIC ### Verification
-# MAGIC After adding entries, the notebook automatically verifies the overall balance and shows:
-# MAGIC * Total Assets
-# MAGIC * Total Liabilities  
-# MAGIC * Total Equity
-# MAGIC * Net Balance (should approach 0 as more balanced entries are added)
+# DBTITLE 1,Verify & Summary
+# Show the new LCR estimate
+new_hqla = 0.0
+new_outflow = 0.0
+for r in new_rows:
+    gl_acct, acct_name, category, acct_type, hqla_type, runoff_str, ts, balance = r
+    if category == "Asset":
+        haircut = HQLA_HAIRCUTS.get(hqla_type, 1.0)
+        new_hqla += balance * (1.0 - haircut)
+    elif category == "Liability":
+        try:
+            ro = float(str(runoff_str).replace("%", "")) / 100.0
+        except ValueError:
+            ro = 0.0
+        new_outflow += abs(balance) * ro
 
-# COMMAND ----------
+new_lcr = new_hqla / new_outflow if new_outflow > 0 else 999.0
+lcr_change = (new_lcr - current_lcr) * 100
 
-# DBTITLE 1,View Current GL Statistics
-# Show current statistics
-gl_stats = spark.sql("""
-    SELECT 
-        COUNT(*) as total_entries,
-        COUNT(DISTINCT category) as num_categories,
-        MIN(timestamp) as earliest_entry,
-        MAX(timestamp) as latest_entry
-    FROM cfo.aura_bank.general_ledger
-""")
-
-print("GENERAL LEDGER STATISTICS")
-print("="*60)
-display(gl_stats)
-
-# Show breakdown by HQLA type for assets
-print("\nASSET BREAKDOWN BY HQLA TYPE")
-print("="*60)
-asset_breakdown = spark.sql("""
-    SELECT 
-        hqla_type,
-        COUNT(*) as num_accounts,
-        SUM(net_balance_m) as total_balance_m
-    FROM cfo.aura_bank.general_ledger
-    WHERE category = 'Asset'
-    GROUP BY hqla_type
-    ORDER BY total_balance_m DESC
-""")
-display(asset_breakdown)
-
-# Show breakdown by runoff rate for liabilities
-print("\nLIABILITY BREAKDOWN BY RUNOFF RATE")
-print("="*60)
-liability_breakdown = spark.sql("""
-    SELECT 
-        runoff,
-        COUNT(*) as num_accounts,
-        SUM(net_balance_m) as total_balance_m
-    FROM cfo.aura_bank.general_ledger
-    WHERE category = 'Liability'
-    GROUP BY runoff
-    ORDER BY runoff
-""")
-display(liability_breakdown)
-
-# COMMAND ----------
-
-# DBTITLE 1,Fix: Delete and Recreate GL Data
+print(f"\n{'='*60}")
+print(f"GL HYDRATION SUMMARY — {today}")
+print(f"{'='*60}")
+print(f"Previous LCR: {current_lcr*100:.2f}%")
+print(f"New LCR est:  {new_lcr*100:.2f}%")
+print(f"Change:       {lcr_change:+.2f} pp")
+print(f"Target band:  {TARGET_LCR_LOW*100:.0f}% – {TARGET_LCR_HIGH*100:.0f}%")
+print(f"{'='*60}")
