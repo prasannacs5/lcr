@@ -30,7 +30,7 @@ set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
 set_trace_processors([])
 
-LLM_ENDPOINT_NAME = "databricks-claude-3-7-sonnet"
+LLM_ENDPOINT_NAME = "databricks-claude-sonnet-5"
 SYSTEM_PROMPT = "You are a helpful financial assistant specialized in Liquidity Coverage Ratio (LCR) analysis and regulatory compliance. You can analyze liquidity positions, calculate LCR metrics, and provide insights on regulatory requirements."
 
 # Auth Setup - Module level initialization with proper fallback

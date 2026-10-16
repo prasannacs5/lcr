@@ -60,7 +60,6 @@ def summarize_executive_summary(raw_text: str) -> str:
             name=endpoint_name,
             messages=messages,
             max_tokens=2048,
-            temperature=0.2,
         )
     except HTTPException:
         raise
@@ -154,7 +153,6 @@ def generate_fr2052a_lcr_narrative(
             name=endpoint_name,
             messages=messages,
             max_tokens=1024,
-            temperature=0.2,
         )
     except HTTPException:
         raise
@@ -218,7 +216,6 @@ def generate_suggested_chat_questions(lcr_rows: list) -> list[dict]:
             name=endpoint_name,
             messages=messages,
             max_tokens=1024,
-            temperature=0.3,
         )
     except HTTPException:
         raise
