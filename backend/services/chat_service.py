@@ -9,10 +9,7 @@ from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CHAT_ENDPOINT = (
-    "https://e2-demo-field-eng.cloud.databricks.com"
-    "/serving-endpoints/lcr-agent-endpoint-v4/invocations"
-)
+DEFAULT_CHAT_ENDPOINT_NAME = "lcr-agent-endpoint-v4"
 
 # Default: no system message to avoid "text content blocks must be non-empty" during agent tool use.
 # Set LCR_CHAT_SYSTEM_CONTEXT in env to add system instructions if your endpoint supports it.
@@ -30,41 +27,37 @@ def _is_databricks_apps() -> bool:
 
 
 def _get_oauth_access_token() -> str:
-    """Obtain Bearer token via OAuth client_credentials for service principal. Cached until near expiry."""
+    """Obtain Bearer token via WorkspaceClient's unified auth (auto-detects Apps SP credentials)."""
     global _oauth_token, _oauth_expires_at
     if _oauth_token and (time.time() + _OAUTH_REFRESH_BUFFER) < _oauth_expires_at:
         return _oauth_token
-    host = (os.environ.get("DATABRICKS_HOST") or "").rstrip("/")
-    client_id = os.environ.get("DATABRICKS_CLIENT_ID")
-    client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET")
-    if not host or not client_id or not client_secret:
-        raise HTTPException(
-            status_code=500,
-            detail="On Databricks Apps, set DATABRICKS_HOST, DATABRICKS_CLIENT_ID, and DATABRICKS_CLIENT_SECRET (service principal OAuth credentials).",
-        )
-    token_url = f"{host}/oidc/v1/token"
     try:
-        resp = requests.post(
-            token_url,
-            auth=(client_id, client_secret),
-            data={"grant_type": "client_credentials", "scope": "all-apis"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        access_token = data.get("access_token")
-        expires_in = int(data.get("expires_in", 3600))
+        from backend.lib.databricks_client import get_workspace_client
+        w = get_workspace_client()
+        auth = w.config.authenticate()
+        # authenticate() may return a dict of headers or a callable that populates headers
+        if callable(auth):
+            headers = {}
+            auth(headers)
+        else:
+            headers = auth if isinstance(auth, dict) else {}
+        bearer = headers.get("Authorization", "")
+        if bearer.startswith("Bearer "):
+            access_token = bearer[7:]
+        else:
+            access_token = bearer
         if not access_token:
-            raise HTTPException(status_code=502, detail="OAuth token response missing access_token.")
+            raise HTTPException(status_code=502, detail="Could not obtain access token from WorkspaceClient.")
         _oauth_token = access_token
-        _oauth_expires_at = time.time() + expires_in
+        _oauth_expires_at = time.time() + 3000  # refresh in ~50 min
         return _oauth_token
-    except requests.RequestException as e:
+    except HTTPException:
+        raise
+    except Exception as e:
         logger.exception("OAuth token request failed")
         raise HTTPException(
             status_code=502,
-            detail=f"Service principal token request failed: {e!s}",
+            detail=f"Token request failed: {e!s}",
         ) from e
 
 
@@ -81,16 +74,20 @@ def _use_streaming() -> bool:
     return os.environ.get("LCR_CHAT_STREAM", "true").lower() in ("1", "true", "yes")
 
 def _get_token() -> str:
-    """Use DATABRICKS_TOKEN when set (local). On Databricks Apps, use service principal OAuth token."""
+    """Use DATABRICKS_TOKEN when set (local). Otherwise use WorkspaceClient unified auth."""
     token = os.environ.get("DATABRICKS_TOKEN")
     if token and token.strip():
         return token.strip()
-    if _is_databricks_apps():
-        return _get_oauth_access_token()
-    raise HTTPException(status_code=500, detail="DATABRICKS_TOKEN required.")
+    return _get_oauth_access_token()
 
 def _get_endpoint_url() -> str:
-    return os.environ.get("DATABRICKS_LCR_CHAT_ENDPOINT", DEFAULT_CHAT_ENDPOINT)
+    url = os.environ.get("DATABRICKS_LCR_CHAT_ENDPOINT")
+    if url:
+        return url
+    from backend.lib.databricks_client import get_host
+    host = get_host()
+    endpoint_name = os.environ.get("LCR_CHAT_ENDPOINT_NAME", DEFAULT_CHAT_ENDPOINT_NAME)
+    return f"{host}/serving-endpoints/{endpoint_name}/invocations"
 
 def _restore_spaces(text: str) -> str:
     """
@@ -397,19 +394,16 @@ def _extract_tool_info(chunk: Any) -> dict:
     if not isinstance(chunk, dict):
         return {"event_type": "unknown"}
 
-    # Databricks Responses API: response.output_item contains tool details
     r = chunk.get("response") or {}
     output_item = r.get("output_item") if isinstance(r, dict) else None
 
     if isinstance(output_item, dict):
         item_type = output_item.get("type", "")
 
-        # function_call — agent is invoking a tool
         if item_type == "function_call":
             name = output_item.get("name", "")
             args_raw = output_item.get("arguments", "")
             call_id = output_item.get("call_id") or output_item.get("id", "")
-            # Parse arguments JSON to extract SQL
             sql = ""
             args_dict = {}
             if isinstance(args_raw, str):
@@ -419,7 +413,6 @@ def _extract_tool_info(chunk: Any) -> dict:
                     args_dict = {"raw": args_raw}
             elif isinstance(args_raw, dict):
                 args_dict = args_raw
-            # Look for SQL in common argument field names
             sql = (args_dict.get("sql") or args_dict.get("query")
                    or args_dict.get("statement") or args_dict.get("input", ""))
             return {
@@ -430,7 +423,6 @@ def _extract_tool_info(chunk: Any) -> dict:
                 "call_id": call_id,
             }
 
-        # function_call_output — result from tool execution
         if item_type == "function_call_output":
             call_id = output_item.get("call_id") or output_item.get("id", "")
             output = output_item.get("output", "")
@@ -440,7 +432,6 @@ def _extract_tool_info(chunk: Any) -> dict:
                 "output": output[:2000] if isinstance(output, str) else str(output)[:2000],
             }
 
-    # OpenAI-style tool_use / tool_result
     chunk_type = chunk.get("type", "")
     if chunk_type == "tool_use":
         name = chunk.get("name", "")
@@ -767,7 +758,10 @@ def stream_chat(user_message: str):
             except json.JSONDecodeError:
                 continue
             if _is_tool_chunk(data):
+                # DEBUG: log raw tool chunk structure to understand the format
+                logger.warning("TOOL_CHUNK_DEBUG: %s", json.dumps(data, default=str)[:3000])
                 tool_info = _extract_tool_info(data)
+                logger.warning("TOOL_INFO_DEBUG: %s", json.dumps(tool_info, default=str)[:1000])
                 if tool_info["event_type"] == "call":
                     yield {
                         "type": "tool_call",

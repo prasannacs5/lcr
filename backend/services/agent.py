@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration — all overridable via env vars in app.yaml
 # ---------------------------------------------------------------------------
-LLM_ENDPOINT_NAME = os.environ.get("LCR_LLM_ENDPOINT_NAME", "databricks-claude-sonnet-4")
+LLM_ENDPOINT_NAME = os.environ.get("LCR_LLM_ENDPOINT_NAME", "databricks-claude-sonnet-5")
 GENIE_SPACE_ID = os.environ.get("LCR_GENIE_SPACE_ID", "01f123d006e91b97aad469ecbc444560")
 
 SYSTEM_PROMPT = """You are a financial data analyst assistant helping a bank's Treasury team

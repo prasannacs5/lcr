@@ -417,9 +417,9 @@ def build_fr2052a_management_pdf(as_of_date: date) -> bytes:
         story.append(Paragraph("No cash outflows breakdown for this date.", body_style))
         story.append(Spacer(1, 0.15 * inch))
 
-    # Notes from cfo.aura.repo_table for this date
+    # Notes from banking_cfo_treasury.aura.repo_table for this date
     if repo_notes:
-        story.append(Paragraph("Notes (cfo.aura.repo_table)", heading_style))
+        story.append(Paragraph("Notes (banking_cfo_treasury.aura.repo_table)", heading_style))
         notes_candidates = ("notes", "note", "text", "comment", "description", "content")
         for i, row in enumerate(repo_notes):
             parts = []

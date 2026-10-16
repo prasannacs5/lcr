@@ -1,3 +1,5 @@
+import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -5,6 +7,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.routes import health, lcr
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 app.include_router(health.router, prefix="/api")
@@ -21,3 +25,13 @@ if static_dir.exists():
     @app.get("/")
     def serve_frontend() -> FileResponse:
         return FileResponse(index_file)
+
+
+@app.on_event("startup")
+def _check_config() -> None:
+    required = ["DATABRICKS_WAREHOUSE_ID"]
+    missing = [v for v in required if not os.environ.get(v)]
+    if missing:
+        logger.warning(
+            "Missing recommended env vars: %s — some features may fail.", missing
+        )

@@ -3,7 +3,7 @@
 from pyspark.sql.functions import sum as spark_sum, col, abs as spark_abs
 
 # Read the general ledger table
-gl_df = spark.table("cfo.aura_bank.general_ledger")
+gl_df = spark.table("banking_cfo_treasury.aura_bank.general_ledger")
 
 print("="*80)
 print("GENERAL LEDGER ACCOUNTING EQUATION VERIFICATION")
@@ -106,7 +106,7 @@ for row in category_breakdown.collect():
 # MAGIC
 # MAGIC ### ✅ **Result: NOW BALANCED**
 # MAGIC
-# MAGIC The [cfo.aura_bank.general_ledger](#table/cfo.aura_bank.general_ledger) table **NOW SATISFIES** the fundamental accounting equation:
+# MAGIC The [banking_cfo_treasury.aura_bank.general_ledger](#table/banking_cfo_treasury.aura_bank.general_ledger) table **NOW SATISFIES** the fundamental accounting equation:
 # MAGIC
 # MAGIC ```
 # MAGIC Assets = Liabilities + Equity
@@ -192,7 +192,7 @@ gl_detailed = spark.sql("""
             WHEN category = 'Asset' THEN 'DR'
             ELSE 'CR'
         END as normal_balance
-    FROM cfo.aura_bank.general_ledger
+    FROM banking_cfo_treasury.aura_bank.general_ledger
     ORDER BY timestamp, category, gl_account
 """)
 
@@ -208,7 +208,7 @@ timeline = spark.sql("""
         category,
         COUNT(*) as num_entries,
         SUM(net_balance_m) as batch_total
-    FROM cfo.aura_bank.general_ledger
+    FROM banking_cfo_treasury.aura_bank.general_ledger
     GROUP BY timestamp, category
     ORDER BY timestamp, category
 """)
@@ -235,7 +235,7 @@ print("BALANCING THE GENERAL LEDGER")
 print("="*80)
 
 # Calculate current imbalance
-gl_df = spark.table("cfo.aura_bank.general_ledger")
+gl_df = spark.table("banking_cfo_treasury.aura_bank.general_ledger")
 totals = gl_df.groupBy("category").agg(spark_sum("net_balance_m").alias("total")).collect()
 
 assets_total = 0
@@ -303,7 +303,7 @@ else:
     
     # Insert the balancing entry
     balancing_df = spark.createDataFrame(balancing_entries, gl_schema)
-    balancing_df.write.mode("append").saveAsTable("cfo.aura_bank.general_ledger")
+    balancing_df.write.mode("append").saveAsTable("banking_cfo_treasury.aura_bank.general_ledger")
     
     print(f"\n✓ Added balancing entry:")
     print(f"  Account: {balancing_entries[0][0]}")
@@ -316,7 +316,7 @@ else:
     print("VERIFICATION AFTER BALANCING")
     print("="*80)
     
-    gl_df_new = spark.table("cfo.aura_bank.general_ledger")
+    gl_df_new = spark.table("banking_cfo_treasury.aura_bank.general_ledger")
     totals_new = gl_df_new.groupBy("category").agg(spark_sum("net_balance_m").alias("total")).collect()
     
     assets_new = 0
@@ -366,7 +366,7 @@ balancing_entry = spark.sql("""
         runoff,
         timestamp,
         net_balance_m
-    FROM cfo.aura_bank.general_ledger
+    FROM banking_cfo_treasury.aura_bank.general_ledger
     WHERE gl_account = '199998'
     ORDER BY timestamp DESC
     LIMIT 1
@@ -381,7 +381,7 @@ print("\nThe adjustment ensures that: Assets = Liabilities + Equity")
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select count(*) from cfo.aura_bank.general_ledger 
+# MAGIC select count(*) from banking_cfo_treasury.aura_bank.general_ledger 
 
 # COMMAND ----------
 

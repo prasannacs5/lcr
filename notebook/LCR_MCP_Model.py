@@ -39,7 +39,7 @@
 # MAGIC set_default_openai_api("chat_completions")
 # MAGIC set_trace_processors([])
 # MAGIC
-# MAGIC LLM_ENDPOINT_NAME = "databricks-claude-3-7-sonnet"
+# MAGIC LLM_ENDPOINT_NAME = "databricks-claude-sonnet-5"
 # MAGIC SYSTEM_PROMPT = "You are a helpful financial assistant specialized in Liquidity Coverage Ratio (LCR) analysis and regulatory compliance. You can analyze liquidity positions, calculate LCR metrics, and provide insights on regulatory requirements."
 # MAGIC
 # MAGIC # Auth Setup - Module level initialization with proper fallback

@@ -7,17 +7,25 @@ command:
   - "0.0.0.0"
   - "--port"
   - "8000"
-
-
-# For chat (serving endpoint) auth on Apps, also set in the app's environment:
-# DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET (service principal OAuth).
-# Do not commit client secret; use Databricks Apps secrets / env configuration.
 env:
-  - name: "DATABRICKS_APP_APPLICATION_ID"
-    value: "f1feec27-013d-42a1-a0de-d84c2396d331"
-  - name: "DATABRICKS_HOST"
-    value: "https://e2-demo-field-eng.cloud.databricks.com/"
-  - name: "DATABRICKS_CLIENT_ID"
-    value: "f1feec27-013d-42a1-a0de-d84c2396d331"
-  - name: "DATABRICKS_CLIENT_SECRET"
-    value: "<YOUR_CLIENT_SECRET>"
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "d9cffc17706c30bc"
+  - name: LCR_GENIE_SPACE_ID
+    value: "01f123d006e91b97aad469ecbc444560"
+  - name: LCR_CATALOG
+    value: "banking_cfo_treasury"
+  - name: LCR_SCHEMA
+    value: "aura_bank"
+  - name: LCR_LLM_ENDPOINT_NAME
+    value: "databricks-claude-sonnet-5"
+  - name: DATABRICKS_SUMMARY_MODEL
+    value: "databricks-claude-sonnet-5"
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      id: "d9cffc17706c30bc"
+      permission: CAN_USE
+  - name: serving-endpoint-claude
+    serving_endpoint:
+      name: "databricks-claude-sonnet-5"
+      permission: CAN_QUERY

@@ -1,4 +1,4 @@
-"""Service layer for LCR data from cfo.aura_bank catalog."""
+"""Service layer for LCR data from configurable catalog (LCR_CATALOG env var)."""
 
 import os
 from datetime import date
@@ -6,8 +6,8 @@ from typing import Any
 
 from backend.lib.databricks_client import execute_sql
 
-CATALOG = "cfo"
-SCHEMA = "aura_bank"
+CATALOG = os.environ.get("LCR_CATALOG", "hive_metastore")
+SCHEMA = os.environ.get("LCR_SCHEMA", "aura_bank")
 LCR_RESULTS_TABLE = "lcr_results"
 HQLA_BREAKDOWN_TABLE = "hqla_breakdown"
 CASH_OUTFLOWS_BREAKDOWN_TABLE = "cash_outflows_breakdown"
@@ -33,13 +33,12 @@ def _gl_timestamp_column() -> str:
 
 def get_lcr_results(as_of_date: date | None = None) -> list[dict[str, Any]]:
     """
-    Fetch LCR result rows from cfo.aura_bank.lcr_results.
+    Fetch LCR result rows from lcr_results table.
     If as_of_date is provided, filter by as_of_date column; otherwise return all rows.
     """
+    full_table = f"{CATALOG}.{SCHEMA}.{LCR_RESULTS_TABLE}"
     if as_of_date is not None:
-        statement = (
-            "SELECT * FROM cfo.aura_bank.lcr_results WHERE as_of_date = :as_of_date"
-        )
+        statement = f"SELECT * FROM {full_table} WHERE as_of_date = :as_of_date"
         return execute_sql(
             statement,
             catalog=CATALOG,
@@ -48,7 +47,7 @@ def get_lcr_results(as_of_date: date | None = None) -> list[dict[str, Any]]:
                 {"name": "as_of_date", "value": as_of_date.isoformat(), "type": "DATE"}
             ],
         )
-    statement = "SELECT * FROM cfo.aura_bank.lcr_results"
+    statement = f"SELECT * FROM {full_table}"
     return execute_sql(statement, catalog=CATALOG, schema=SCHEMA)
 
 
@@ -57,13 +56,12 @@ def get_hqla_breakdown(
     as_of_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Fetch rows from cfo.aura_bank.hqla_breakdown.
+    Fetch rows from hqla_breakdown table.
     Filter by snapshot_id if provided, else by as_of_date if provided, else return all.
     """
+    full_table = f"{CATALOG}.{SCHEMA}.{HQLA_BREAKDOWN_TABLE}"
     if snapshot_id:
-        statement = (
-            "SELECT * FROM cfo.aura_bank.hqla_breakdown WHERE snapshot_id = :snapshot_id"
-        )
+        statement = f"SELECT * FROM {full_table} WHERE snapshot_id = :snapshot_id"
         return execute_sql(
             statement,
             catalog=CATALOG,
@@ -73,9 +71,7 @@ def get_hqla_breakdown(
             ],
         )
     if as_of_date is not None:
-        statement = (
-            "SELECT * FROM cfo.aura_bank.hqla_breakdown WHERE as_of_date = :as_of_date"
-        )
+        statement = f"SELECT * FROM {full_table} WHERE as_of_date = :as_of_date"
         return execute_sql(
             statement,
             catalog=CATALOG,
@@ -85,7 +81,7 @@ def get_hqla_breakdown(
             ],
         )
     return execute_sql(
-        "SELECT * FROM cfo.aura_bank.hqla_breakdown",
+        f"SELECT * FROM {full_table}",
         catalog=CATALOG,
         schema=SCHEMA,
     )
@@ -96,13 +92,12 @@ def get_cash_outflows_breakdown(
     as_of_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Fetch rows from cfo.aura_bank.cash_outflows_breakdown.
+    Fetch rows from cash_outflows_breakdown table.
     Filter by snapshot_id if provided, else by as_of_date if provided, else return all.
     """
+    full_table = f"{CATALOG}.{SCHEMA}.{CASH_OUTFLOWS_BREAKDOWN_TABLE}"
     if snapshot_id:
-        statement = (
-            "SELECT * FROM cfo.aura_bank.cash_outflows_breakdown WHERE snapshot_id = :snapshot_id"
-        )
+        statement = f"SELECT * FROM {full_table} WHERE snapshot_id = :snapshot_id"
         return execute_sql(
             statement,
             catalog=CATALOG,
@@ -112,9 +107,7 @@ def get_cash_outflows_breakdown(
             ],
         )
     if as_of_date is not None:
-        statement = (
-            "SELECT * FROM cfo.aura_bank.cash_outflows_breakdown WHERE as_of_date = :as_of_date"
-        )
+        statement = f"SELECT * FROM {full_table} WHERE as_of_date = :as_of_date"
         return execute_sql(
             statement,
             catalog=CATALOG,
@@ -124,7 +117,7 @@ def get_cash_outflows_breakdown(
             ],
         )
     return execute_sql(
-        "SELECT * FROM cfo.aura_bank.cash_outflows_breakdown",
+        f"SELECT * FROM {full_table}",
         catalog=CATALOG,
         schema=SCHEMA,
     )
@@ -146,7 +139,7 @@ def _reco_tag_column() -> str:
 
 def get_reco_records(limit: int = 500) -> list[dict[str, Any]]:
     """
-    Fetch recent records from cfo.aura_bank.reco_table, ordered by date descending.
+    Fetch recent records from reco_table, ordered by date descending.
     Table and date column are configurable via LCR_RECO_TABLE, LCR_RECO_DATE_COLUMN.
     Used to drive Executive Summary sections grouped by tag (LCR_RECO_TAG_COLUMN).
     """
@@ -185,8 +178,8 @@ def get_gl_data(as_of_date: date | None = None) -> list[dict[str, Any]]:
     )
 
 
-REPO_TABLE_CATALOG = "cfo"
-REPO_TABLE_SCHEMA = "aura"
+REPO_TABLE_CATALOG = os.environ.get("LCR_CATALOG", "hive_metastore")
+REPO_TABLE_SCHEMA = os.environ.get("LCR_SCHEMA", "aura_bank")
 REPO_TABLE_NAME = "repo_table"
 
 
@@ -197,7 +190,7 @@ def _repo_date_column() -> str:
 
 def get_repo_notes(as_of_date: date) -> list[dict[str, Any]]:
     """
-    Fetch notes from cfo.aura.repo_table for the given as_of_date.
+    Fetch notes from repo_table for the given as_of_date.
     Used by FR 2052a management report. Date column configurable via LCR_REPO_DATE_COLUMN.
     """
     date_col = _repo_date_column()
