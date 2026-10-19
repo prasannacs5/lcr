@@ -1,0 +1,21 @@
+{
+  "name": "lcr_lakeflow_pipeline",
+  "edition": "ADVANCED",
+  "serverless": true,
+  "development": true,
+  "continuous": false,
+  "photon": true,
+  "catalog": "cfo",
+  "schema": "aura_bank_lakeflow",
+  "configuration": {
+    "lcr.landing_root": "/Volumes/cfo/aura_bank/lcr_raw_landing"
+  },
+  "libraries": [
+    {
+      "notebook": {
+        "path": "/Workspace/Users/prasanna.selvaraj@databricks.com/lcr-app/notebook/lcr_lakeflow_pipeline"
+      }
+    }
+  ],
+  "_comment": "Lakeflow Declarative Pipeline for the raw->gold LCR medallion. Target schema cfo.aura_bank_lakeflow is intentionally parallel to the live cfo.aura_bank schema so the ingestion leg never touches the tables the app serves. Create with: databricks pipelines create --json @resources/lcr_lakeflow_pipeline.json ; seed raw files first by running notebook/lcr_lakeflow_seed."
+}

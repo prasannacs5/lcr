@@ -178,47 +178,62 @@ if not table_exists or existing_count == 0:
     print(f"✓ General Ledger table created with {len(gl_data)} initial entries")
     
 else:
-    # Add 10 new entries while maintaining accounting equation
+    # Add new entries using balanced double-entry construction.
+    # Each funding event books an asset and an equal, opposite funding source (a liability
+    # or equity credit) of the same magnitude. Because every event nets to zero, the
+    # accounting identity Assets = Liabilities + Equity is preserved by construction, so
+    # there is no after-the-fact plug entry. The Lakeflow pipeline
+    # (notebook/lcr_lakeflow_pipeline) additionally enforces this identity as a declarative
+    # data-quality expectation, quarantining any snapshot that does not balance.
     current_time = datetime.now()
-    
-    # Define transaction templates (5 assets, 4 liabilities, 1 equity adjustment)
-    new_transactions = [
-        # Assets (positive values)
-        (f"11{random.randint(1000, 9999)}", "Commercial Loans", "Asset", "Loans (Business)", "Non-HQLA", "0%", current_time, round(random.uniform(50, 200), 2)),
-        (f"10{random.randint(1000, 9999)}", "Municipal Bonds", "Asset", "Municipal Bonds", "Level 2A", "0%", current_time, round(random.uniform(100, 300), 2)),
-        (f"10{random.randint(1000, 9999)}", "Treasury Notes", "Asset", "US Treasuries", "Level 1", "0%", current_time, round(random.uniform(200, 500), 2)),
-        (f"10{random.randint(1000, 9999)}", "Agency Securities", "Asset", "Agency MBS (AAA)", "Level 2A", "0%", current_time, round(random.uniform(150, 400), 2)),
-        (f"11{random.randint(1000, 9999)}", "Auto Loans", "Asset", "Loans (Business)", "Non-HQLA", "0%", current_time, round(random.uniform(80, 250), 2)),
-        # Liabilities (negative values)
-        (f"20{random.randint(1000, 9999)}", "Retail CDs", "Liability", "Retail Deposits", "N/A", "10%", current_time, round(-random.uniform(100, 300), 2)),
-        (f"20{random.randint(1000, 9999)}", "Corp Operating Deposits", "Liability", "Corporate Deposits", "N/A", "25%", current_time, round(-random.uniform(150, 400), 2)),
-        (f"20{random.randint(1000, 9999)}", "Money Market Deposits", "Liability", "Retail Deposits", "N/A", "3%", current_time, round(-random.uniform(200, 500), 2)),
-        (f"20{random.randint(1000, 9999)}", "Wholesale Borrowings", "Liability", "Wholesale Funding", "N/A", "100%", current_time, round(-random.uniform(50, 150), 2))
+
+    # Each template is (asset_leg, funding_leg); the funding leg's amount mirrors the asset.
+    funding_events = [
+        (
+            (f"11{random.randint(1000, 9999)}", "Commercial Loans", "Asset", "Loans (Business)", "Non-HQLA", "0%"),
+            (f"20{random.randint(1000, 9999)}", "Retail CDs", "Liability", "Retail Deposits", "N/A", "10%"),
+            round(random.uniform(50, 200), 2),
+        ),
+        (
+            (f"10{random.randint(1000, 9999)}", "Municipal Bonds", "Asset", "Municipal Bonds", "Level 2A", "0%"),
+            (f"20{random.randint(1000, 9999)}", "Corp Operating Deposits", "Liability", "Corporate Deposits", "N/A", "25%"),
+            round(random.uniform(100, 300), 2),
+        ),
+        (
+            (f"10{random.randint(1000, 9999)}", "Treasury Notes", "Asset", "US Treasuries", "Level 1", "0%"),
+            (f"20{random.randint(1000, 9999)}", "Money Market Deposits", "Liability", "Retail Deposits", "N/A", "3%"),
+            round(random.uniform(200, 500), 2),
+        ),
+        (
+            (f"10{random.randint(1000, 9999)}", "Agency Securities", "Asset", "Agency MBS (AAA)", "Level 2A", "0%"),
+            (f"20{random.randint(1000, 9999)}", "Wholesale Borrowings", "Liability", "Wholesale Funding", "N/A", "100%"),
+            round(random.uniform(150, 400), 2),
+        ),
+        (
+            (f"11{random.randint(1000, 9999)}", "Auto Loans", "Asset", "Loans (Business)", "Non-HQLA", "0%"),
+            (f"30{random.randint(1000, 9999)}", "Retained Earnings", "Equity", "Equity", "N/A", "0%"),
+            round(random.uniform(80, 250), 2),
+        ),
     ]
-    
-    # Calculate total assets and liabilities from new transactions
-    new_assets = sum([t[7] for t in new_transactions if t[2] == "Asset"])
-    new_liabilities = sum([t[7] for t in new_transactions if t[2] == "Liability"])
-    
-    # Calculate equity adjustment to balance (Assets = Liabilities + Equity)
-    equity_adjustment = -(new_assets + new_liabilities)  # negative because equity is on credit side
-    
-    # Add equity adjustment transaction
-    new_transactions.append(
-        (f"30{random.randint(1000, 9999)}", "Retained Earnings Adjustment", "Equity", "Equity", "N/A", "0%", current_time, round(equity_adjustment, 2))
-    )
-    
+
+    new_transactions = []
+    for asset_leg, funding_leg, amount in funding_events:
+        new_transactions.append((*asset_leg, current_time, amount))
+        new_transactions.append((*funding_leg, current_time, -amount))
+
+    new_assets = sum(t[7] for t in new_transactions if t[2] == "Asset")
+    new_funding = sum(t[7] for t in new_transactions if t[2] in ("Liability", "Equity"))
+
     # Create DataFrame for new transactions
     new_gl_df = spark.createDataFrame(new_transactions, gl_schema)
-    
+
     # Append to existing table
     new_gl_df.write.mode("append").saveAsTable("cfo.aura_bank.general_ledger")
-    
-    print(f"✓ Added 10 new entries to General Ledger")
+
+    print(f"✓ Added {len(new_transactions)} balanced entries to General Ledger")
     print(f"  New Assets: ${new_assets:,.2f}M")
-    print(f"  New Liabilities: ${abs(new_liabilities):,.2f}M")
-    print(f"  Equity Adjustment: ${equity_adjustment:,.2f}M")
-    print(f"  Balance Check: ${new_assets + new_liabilities + equity_adjustment:,.2f}M (should be 0.00)")
+    print(f"  New Funding (Liabilities + Equity): ${abs(new_funding):,.2f}M")
+    print(f"  Balance Check: ${new_assets + new_funding:,.2f}M (balanced by construction, should be 0.00)")
 
 # ============================================
 # VERIFY ACCOUNTING EQUATION
@@ -298,63 +313,28 @@ display(summary)
 
 # DBTITLE 1,Important Note About Balance
 # MAGIC %md
-# MAGIC ## ⚠️ Current Status: Initial Data Has Balance Issue
+# MAGIC ## Balanced by construction
 # MAGIC
-# MAGIC The general_ledger table currently contains data from the first run with an accounting imbalance:
-# MAGIC * **Assets**: $31,791.50M
-# MAGIC * **Liabilities**: $39,691.50M  
-# MAGIC * **Equity**: $3,000.00M
-# MAGIC * **Net Balance**: -$10,900.00M ❌
+# MAGIC New general ledger entries are booked as **double-entry funding events**: every asset
+# MAGIC leg is paired with an equal and opposite funding leg (a liability or an equity credit)
+# MAGIC of the same magnitude. Because each event nets to zero, the accounting identity
+# MAGIC **Assets = Liabilities + Equity** holds for every batch without any after-the-fact plug
+# MAGIC or adjustment entry.
 # MAGIC
-# MAGIC ### Why This Happened
-# MAGIC The initial test data had incorrect liability values. The accounting equation requires: **Assets = Liabilities + Equity**
-# MAGIC
-# MAGIC ### What Happens Next
-# MAGIC * **Subsequent runs** of Cell 1 will add 10 NEW entries that ARE properly balanced
-# MAGIC * Each run adds: 5 assets, 4 liabilities, and 1 equity adjustment that maintains the equation
-# MAGIC * The new entries will be balanced, but the initial 15 records will remain unbalanced
-# MAGIC
-# MAGIC ### To Fix (Optional)
-# MAGIC If you want to start fresh with balanced data, you can manually run:
-# MAGIC ```sql
-# MAGIC DROP TABLE cfo.aura_bank.general_ledger;
-# MAGIC ```
-# MAGIC Then re-run Cell 1 to create the table with corrected initial values.
-# MAGIC
-# MAGIC ### Or Continue As-Is
-# MAGIC You can continue using the table - just note that the first 15 records have the imbalance, but all subsequent additions will be properly balanced.
+# MAGIC The governed ingestion path (`notebook/lcr_lakeflow_pipeline`) enforces the same
+# MAGIC identity declaratively: it computes the net balance per GL snapshot and quarantines any
+# MAGIC snapshot that does not balance, rather than silencing an imbalance. So data integrity is
+# MAGIC guaranteed both where the data is produced and where it is governed.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 🔄 Adding More Transactions
+# MAGIC ## Adding more transactions
 # MAGIC
-# MAGIC To add 10 new balanced transactions to the General Ledger:
-# MAGIC
-# MAGIC 1. **Re-run Cell 1** ("Create CFO Aura Bank Tables with Synthetic Data")
-# MAGIC 2. The code will detect the existing table and add:
-# MAGIC    * 5 new asset accounts (Commercial Loans, Municipal Bonds, Treasury Notes, Agency Securities, Auto Loans)
-# MAGIC    * 4 new liability accounts (Retail CDs, Corp Operating Deposits, Money Market Deposits, Wholesale Borrowings)  
-# MAGIC    * 1 equity adjustment to balance the new entries
-# MAGIC
-# MAGIC 3. Each run adds exactly 10 entries that maintain: **Assets = Liabilities + Equity**
-# MAGIC
-# MAGIC ### Example Output
-# MAGIC When you re-run Cell 1, you'll see:
-# MAGIC ```
-# MAGIC ✓ Added 10 new entries to General Ledger
-# MAGIC   New Assets: $XXX.XXM
-# MAGIC   New Liabilities: $XXX.XXM
-# MAGIC   Equity Adjustment: $XXX.XXM
-# MAGIC   Balance Check: $0.00M (should be 0.00)
-# MAGIC ```
-# MAGIC
-# MAGIC ### Verification
-# MAGIC After adding entries, the notebook automatically verifies the overall balance and shows:
-# MAGIC * Total Assets
-# MAGIC * Total Liabilities  
-# MAGIC * Total Equity
-# MAGIC * Net Balance (should approach 0 as more balanced entries are added)
+# MAGIC Re-running Cell 1 detects the existing table and appends a batch of balanced
+# MAGIC double-entry funding events (an asset leg plus a matching liability or equity leg for
+# MAGIC each event). Every batch keeps **Assets = Liabilities + Equity** satisfied, and the
+# MAGIC verification cell above prints the net balance (which stays at 0.00 by construction).
 
 # COMMAND ----------
 

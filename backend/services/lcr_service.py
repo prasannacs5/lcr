@@ -1,10 +1,15 @@
 """Service layer for LCR data from cfo.aura_bank catalog."""
 
+import logging
 import os
 from datetime import date
 from typing import Any
 
 from backend.lib.databricks_client import execute_sql
+from backend.lib.lakebase_client import query_lcr_results as lakebase_lcr_results
+from backend.lib.lakebase_client import use_lakebase
+
+logger = logging.getLogger(__name__)
 
 CATALOG = "cfo"
 SCHEMA = "aura_bank"
@@ -35,7 +40,17 @@ def get_lcr_results(as_of_date: date | None = None) -> list[dict[str, Any]]:
     """
     Fetch LCR result rows from cfo.aura_bank.lcr_results.
     If as_of_date is provided, filter by as_of_date column; otherwise return all rows.
+
+    When LCR_USE_LAKEBASE is enabled, reads are served from the Lakebase operational
+    store (low-latency) instead of the SQL warehouse. The flag defaults off, and any
+    Lakebase error falls back to the warehouse so the app stays available.
     """
+    if use_lakebase():
+        try:
+            return lakebase_lcr_results(as_of_date=as_of_date)
+        except Exception as e:  # noqa: BLE001 - never let the serving layer take the app down
+            logger.warning("Lakebase read failed, falling back to SQL warehouse: %s", e)
+
     if as_of_date is not None:
         statement = (
             "SELECT * FROM cfo.aura_bank.lcr_results WHERE as_of_date = :as_of_date"

@@ -3,3 +3,4 @@ databricks-sdk
 reportlab
 requests
 uvicorn
+psycopg[binary]
